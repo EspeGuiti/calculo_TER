@@ -10,7 +10,7 @@ if uploaded_file:
 
     required_columns = [
         "Family Name", "Type of Share", "Currency", "Hedged",
-        "Minimum Initial", "MiFID FH", "Ongoing Charge", "ISIN"
+        "Min. Initial", "MiFID FH", "Ongoing Charge", "ISIN"
     ]
 
     missing_columns = [col for col in required_columns if col not in df.columns]
@@ -22,7 +22,7 @@ if uploaded_file:
         # ✅ CLEANING STEP
         df["Ongoing Charge"] = df["Ongoing Charge"].str.replace("%", "").str.replace(",", ".").astype(float) / 100
 
-        filter_cols = ["Type of Share", "Currency", "Hedged", "Minimum Initial", "MiFID FH"]
+        filter_cols = ["Type of Share", "Currency", "Hedged", "Min. Initial", "MiFID FH"]
         group_key = "Family Name"
 
         # ---------- STEP 2: Global Share Class Filters ----------
@@ -39,7 +39,7 @@ if uploaded_file:
         with c3:
             global_filters["Hedged"] = st.selectbox("Hedged", global_filter_options["Hedged"])
         with c4:
-            global_filters["Minimum Initial"] = st.selectbox("Minimum Initial", global_filter_options["Minimum Initial"])
+            global_filters["Min. Initial"] = st.selectbox("Min. Initial", global_filter_options["Min. Initial"])
         with c5:
             global_filters["MiFID FH"] = st.selectbox("MiFID FH", global_filter_options["MiFID FH"])
 
@@ -86,7 +86,7 @@ if uploaded_file:
             row_data["Type of Share"], context = cascade_select("Type of Share", "Type of Share", global_filters["Type of Share"], context, 0)
             row_data["Currency"], context = cascade_select("Currency", "Currency", global_filters["Currency"], context, 1)
             row_data["Hedged"], context = cascade_select("Hedged", "Hedged", global_filters["Hedged"], context, 2)
-            row_data["Minimum Initial"], context = cascade_select("Minimum Initial", "Minimum Initial", global_filters["Minimum Initial"], context, 3)
+            row_data["Min. Initial"], context = cascade_select("Min. Initial", "Min. Initial", global_filters["Min. Initial"], context, 3)
             row_data["MiFID FH"], context = cascade_select("MiFID FH", "MiFID FH", global_filters["MiFID FH"], context, 4)
 
             # 5: Weight input
@@ -117,7 +117,7 @@ if uploaded_file:
                     row["Type of Share"],
                     row["Currency"],
                     row["Hedged"],
-                    row["Minimum Initial"],
+                    row["Min. Initial"],
                     row["MiFID FH"]
                 ]:
                     errors.append((row["Family Name"], "One or more selections are 'NOT FOUND'"))
@@ -128,7 +128,7 @@ if uploaded_file:
                     (df["Type of Share"] == row["Type of Share"]) &
                     (df["Currency"] == row["Currency"]) &
                     (df["Hedged"] == row["Hedged"]) &
-                    (df["Minimum Initial"] == row["Minimum Initial"]) &
+                    (df["Min. Initial"] == row["Min. Initial"]) &
                     (df["MiFID FH"] == row["MiFID FH"])
                 ]
 
@@ -151,7 +151,7 @@ if uploaded_file:
                     "Type of Share": row["Type of Share"],
                     "Currency": row["Currency"],
                     "Hedged": row["Hedged"],
-                    "Minimum Initial": row["Minimum Initial"],
+                    "Min. Initial": row["Min. Initial"],
                     "MiFID FH": row["MiFID FH"],
                     "Weight %": weight,
                     "ISIN": isin,
