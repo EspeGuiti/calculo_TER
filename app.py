@@ -1,3 +1,7 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+
 # Step 1: Upload and Validate Excel
 uploaded_file = st.file_uploader("Upload Excel File with Share Classes", type=["xlsx"])
 
