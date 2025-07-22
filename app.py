@@ -20,7 +20,7 @@ if uploaded_file:
         st.success("File uploaded successfully. All required columns are present.")
 
         # ✅ CLEANING STEP
-        df["Ongoing Charge"] = df["Ongoing Charge"].str.replace("%", "").str.replace(",", ".").astype(float) / 100
+        df["Ongoing Charge"] = df["Ongoing Charge"].astype(str).str.replace("%","").str.replace(",",".").astype(float)
 
         filter_cols = ["Type of Share", "Currency", "Hedged", "Min. Initial", "MiFID FH"]
         group_key = "Family Name"
