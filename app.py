@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
+st.set_page_config(layout="wide")
+st.markdown("#Portfolio TER Calculator")
+
 # Step 1: Upload and Validate Excel
 uploaded_file = st.file_uploader("Upload Excel File with Share Classes", type=["xlsx"])
 
