@@ -14,7 +14,7 @@ if uploaded_file:
     required_columns = [
         "Family Name", "Type of Share", "Currency", "Hedged",
         "Min. Initial", "MiFID FH", "Ongoing Charge", "ISIN"
-    ]<<
+    ]
 
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
@@ -23,7 +23,7 @@ if uploaded_file:
         st.success("File uploaded successfully. All required columns are present.")
 
         # ✅ CLEANING STEP
-        df["Ongoing Charge"] = df["Ongoing Charge"].astype(str).str.replace("%","").str.replace(",",".").astype(float)
+        df["Ongoing Charge"] = df["Ongoing Charge"].astype(str).str.replace("%", "").str.replace(",", ".").astype(float)
 
         filter_cols = ["Type of Share", "Currency", "Hedged", "Min. Initial", "MiFID FH"]
         group_key = "Family Name"
