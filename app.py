@@ -23,7 +23,13 @@ if uploaded_file:
         st.success("File uploaded successfully. All required columns are present.")
 
         # ✅ CLEANING STEP
-        df["Ongoing Charge"] = df["Ongoing Charge"].astype(str).str.replace("%", "").str.replace(",", ".").astype(float)
+        df["Ongoing Charge"] = (
+            df["Ongoing Charge"]
+            .astype(str)
+            .str.replace("%", "")
+            .str.replace(",", ".")
+            .astype(float)
+        )
 
         filter_cols = ["Type of Share", "Currency", "Hedged", "Min. Initial", "MiFID FH"]
         group_key = "Family Name"
@@ -68,12 +74,12 @@ if uploaded_file:
 
             context = fund_data
 
-            def cascade_select(label, col_key, global_value, context_df, key_suffix):
+            def cascade_select(label, col_key, global_value, context_df, col_idx):
                 opts = sorted(context_df[col_key].dropna().unique().tolist())
                 initial = global_value if global_value in opts else "NOT FOUND"
                 if initial == "NOT FOUND":
                     opts = ["NOT FOUND"] + opts
-                choice = cols[key_suffix].selectbox(
+                choice = cols[col_idx].selectbox(
                     label,
                     options=opts,
                     index=opts.index(initial),
@@ -83,12 +89,24 @@ if uploaded_file:
                     return choice, context_df[context_df[col_key] == choice]
                 return choice, context_df
 
-            row_data["Type of Share"], context = cascade_select("Type of Share", "Type of Share", global_filters["Type of Share"], context, 0)
-            row_data["Currency"], context = cascade_select("Currency", "Currency", global_filters["Currency"], context, 1)
-            row_data["Hedged"], context = cascade_select("Hedged", "Hedged", global_filters["Hedged"], context, 2)
-            row_data["Min. Initial"], context = cascade_select("Min. Initial", "Min. Initial", global_filters["Min. Initial"], context, 3)
-            row_data["MiFID FH"], context = cascade_select("MiFID FH", "MiFID FH", global_filters["MiFID FH"], context, 4)
+            # Cascading dropdowns
+            row_data["Type of Share"], context = cascade_select(
+                "Type of Share", "Type of Share", global_filters["Type of Share"], context, 0
+            )
+            row_data["Currency"], context = cascade_select(
+                "Currency", "Currency", global_filters["Currency"], context, 1
+            )
+            row_data["Hedged"], context = cascade_select(
+                "Hedged", "Hedged", global_filters["Hedged"], context, 2
+            )
+            row_data["Min. Initial"], context = cascade_select(
+                "Min. Initial", "Min. Initial", global_filters["Min. Initial"], context, 3
+            )
+            row_data["MiFID FH"], context = cascade_select(
+                "MiFID FH", "MiFID FH", global_filters["MiFID FH"], context, 4
+            )
 
+            # Weight input
             row_data["Weight %"] = cols[5].number_input(
                 "Weight %",
                 min_value=0.0,
@@ -97,13 +115,14 @@ if uploaded_file:
                 key=f"weight_{idx}"
             )
 
-            current_weights = [r["Weight %"] for r in edited_rows] + [row_data["Weight %"]]
-            total_weight_so_far = sum(current_weights)
-            cols[6].markdown(f"**Total Weight So Far:** {total_weight_so_far:.2f}%")
-
             edited_rows.append(row_data)
 
-        edited_df = pd.DataFrame(edited_rows)
+        # ─── Mostrar sólo un total de pesos global ───
+        total_weight = sum(row["Weight %"] for row in edited_rows)
+        st.markdown("---")
+        st.subheader("Resumen de Pesos")
+        st.write(f"**Total Weight: {total_weight:.2f}%**")
+
         st.divider()
 
         # ---------- STEP 4: Calculate ISIN and TER ----------
@@ -113,15 +132,12 @@ if uploaded_file:
             results = []
             errors = []
             total_weighted_charge = 0.0
-            total_weight = 0.0
+            total_weight_calc = 0.0
 
-            for i, row in edited_df.iterrows():
+            for _, row in pd.DataFrame(edited_rows).iterrows():
                 if "NOT FOUND" in [
-                    row["Type of Share"],
-                    row["Currency"],
-                    row["Hedged"],
-                    row["Min. Initial"],
-                    row["MiFID FH"]
+                    row["Type of Share"], row["Currency"], row["Hedged"],
+                    row["Min. Initial"], row["MiFID FH"]
                 ]:
                     errors.append((row["Family Name"], "One or more selections are 'NOT FOUND'"))
                     continue
@@ -142,12 +158,11 @@ if uploaded_file:
                 best_row = match_df.loc[match_df["Ongoing Charge"].idxmin()]
                 isin = best_row["ISIN"]
                 charge = best_row["Ongoing Charge"]
-
                 weight = row["Weight %"]
-                weighted = charge * (weight / 100.0) if weight else 0.0
 
+                weighted = charge * (weight / 100.0) if weight else 0.0
                 total_weighted_charge += weighted
-                total_weight += weight if weight else 0.0
+                total_weight_calc += weight
 
                 results.append({
                     "Family Name": row["Family Name"],
@@ -167,8 +182,8 @@ if uploaded_file:
             st.subheader("Step 5: Final Fund Table with ISINs and Charges")
             st.dataframe(result_df, use_container_width=True)
 
-            if total_weight > 0:
-                portfolio_ter = total_weighted_charge / (total_weight / 100.0)
+            if total_weight_calc > 0:
+                portfolio_ter = total_weighted_charge / (total_weight_calc / 100.0)
                 st.metric(label="📊 Weighted Average TER", value=f"{portfolio_ter:.2%}")
             else:
                 st.warning("No weights provided to compute average TER.")
