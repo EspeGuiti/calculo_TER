@@ -9,12 +9,12 @@ st.markdown("# 📊Portfolio TER Calculator")
 uploaded_file = st.file_uploader("Upload Excel File with Share Classes", type=["xlsx"])
 
 if uploaded_file:
-    df = pd.read_excel(uploaded_file)
+    df = pd.read_excel(uploaded_file, skiprows=2)
 
     required_columns = [
         "Family Name", "Type of Share", "Currency", "Hedged",
         "Min. Initial", "MiFID FH", "Ongoing Charge", "ISIN"
-    ]
+    ]<<
 
     missing_columns = [col for col in required_columns if col not in df.columns]
     if missing_columns:
