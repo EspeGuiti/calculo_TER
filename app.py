@@ -66,10 +66,8 @@ if uploaded_file:
                 "Ongoing Charge": None
             }
 
-            # Start with full fund subset and shrink as we pick values
             context = fund_data
 
-            # Helper to build each dropdown
             def cascade_select(label, col_key, global_value, context_df, key_suffix):
                 opts = sorted(context_df[col_key].dropna().unique().tolist())
                 initial = global_value if global_value in opts else "NOT FOUND"
@@ -85,14 +83,12 @@ if uploaded_file:
                     return choice, context_df[context_df[col_key] == choice]
                 return choice, context_df
 
-            # 0–4: dropdown filters
             row_data["Type of Share"], context = cascade_select("Type of Share", "Type of Share", global_filters["Type of Share"], context, 0)
             row_data["Currency"], context = cascade_select("Currency", "Currency", global_filters["Currency"], context, 1)
             row_data["Hedged"], context = cascade_select("Hedged", "Hedged", global_filters["Hedged"], context, 2)
             row_data["Min. Initial"], context = cascade_select("Min. Initial", "Min. Initial", global_filters["Min. Initial"], context, 3)
             row_data["MiFID FH"], context = cascade_select("MiFID FH", "MiFID FH", global_filters["MiFID FH"], context, 4)
 
-            # 5: Weight input
             row_data["Weight %"] = cols[5].number_input(
                 "Weight %",
                 min_value=0.0,
@@ -100,6 +96,10 @@ if uploaded_file:
                 step=0.1,
                 key=f"weight_{idx}"
             )
+
+            current_weights = [r["Weight %"] for r in edited_rows] + [row_data["Weight %"]]
+            total_weight_so_far = sum(current_weights)
+            cols[6].markdown(f"**Total Weight So Far:** {total_weight_so_far:.2f}%")
 
             edited_rows.append(row_data)
 
