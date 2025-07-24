@@ -19,21 +19,23 @@ def save_as_I():
         "label": "Portfolio I",
         **st.session_state.current_portfolio
     })
-    st.experimental_rerun()
 
 def save_as_II():
     st.session_state.saved_portfolios.append({
         "label": "Portfolio II",
         **st.session_state.current_portfolio
     })
-    st.experimental_rerun()
 
 # ─── Step 1: Upload ───
 uploaded_file = st.file_uploader("Upload Excel file with share classes", type=["xlsx"])
 if not uploaded_file:
     st.stop()
+
 df = pd.read_excel(uploaded_file, skiprows=2)
-required = ["Family Name","Type of Share","Currency","Hedged","Min. Initial","MiFID FH","Ongoing Charge","ISIN"]
+required = [
+    "Family Name","Type of Share","Currency","Hedged",
+    "Min. Initial","MiFID FH","Ongoing Charge","ISIN"
+]
 missing = [c for c in required if c not in df.columns]
 if missing:
     st.error(f"Missing columns: {missing}")
@@ -50,7 +52,10 @@ df["Ongoing Charge"] = (
 
 # ─── Step 2: Global Filters ───
 st.subheader("Step 2: Global Share Class Filters")
-filter_cols = ["Type of Share","Currency","Hedged","Min. Initial","MiFID FH"]
+filter_cols = [
+    "Type of Share","Currency","Hedged",
+    "Min. Initial","MiFID FH"
+]
 opts = {col: sorted(df[col].dropna().unique()) for col in filter_cols}
 c1,c2,c3,c4,c5 = st.columns(5)
 global_filters = {}
@@ -68,6 +73,7 @@ with c5:
 # ─── Step 3: Per‑Fund Cascading Dropdowns ───
 st.subheader("Step 3: Customize Share Class per Fund")
 st.write("🔽 Dropdowns only show valid combinations per fund")
+
 edited = []
 for idx, fam in enumerate(df["Family Name"].dropna().unique()):
     fund_df = df[df["Family Name"] == fam].copy()
@@ -133,12 +139,15 @@ if st.button("Calculate TER", key="calc"):
         charge, weight = best["Ongoing Charge"], row["Weight %"]
         twc += charge * (weight / 100)
         tw  += weight
-        results.append({**row, "ISIN": best["ISIN"], "Ongoing Charge": charge})
+        results.append({
+            **row,
+            "ISIN": best["ISIN"],
+            "Ongoing Charge": charge
+        })
 
     df_res = pd.DataFrame(results)
     if tw > 0 and not errors:
-        ter = twc / (tw / 100)
-        st.session_state.current_portfolio = {"table": df_res, "ter": ter}
+        st.session_state.current_portfolio = {"table": df_res, "ter": twc / (tw / 100)}
     else:
         st.session_state.current_portfolio = {"table": df_res, "ter": None}
     st.session_state.current_errors = errors
@@ -156,10 +165,14 @@ if st.session_state.current_portfolio:
             st.error(f"{fam}: {msg}")
 
 # ─── Step 6: Compare Portfolios ───
-if st.session_state.current_portfolio and st.session_state.current_portfolio["ter"] is not None and not st.session_state.current_errors:
+if (
+    st.session_state.current_portfolio
+    and st.session_state.current_portfolio["ter"] is not None
+    and not st.session_state.current_errors
+):
     st.subheader("Step 6: Compare Portfolios")
 
-    # always show any already-saved portfolios
+    # always render any already-saved portfolios
     for p in st.session_state.saved_portfolios:
         st.markdown(f"#### {p['label']}")
         st.metric("Weighted Average TER", f"{p['ter']:.2%}")
@@ -171,7 +184,6 @@ if st.session_state.current_portfolio and st.session_state.current_portfolio["te
     elif len(st.session_state.saved_portfolios) == 1:
         st.button("Compare with Current", on_click=save_as_II, key="compare")
     else:
-        # two saved → show TER difference
         p1, p2 = st.session_state.saved_portfolios
         diff = p2["ter"] - p1["ter"]
         st.markdown("---")
