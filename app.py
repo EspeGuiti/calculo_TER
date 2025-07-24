@@ -30,7 +30,6 @@ def save_as_II():
 uploaded_file = st.file_uploader("Upload Excel file with share classes", type=["xlsx"])
 if not uploaded_file:
     st.stop()
-
 df = pd.read_excel(uploaded_file, skiprows=2)
 required = [
     "Family Name","Type of Share","Currency","Hedged",
@@ -51,6 +50,22 @@ df["Ongoing Charge"] = (
 )
 
 # ─── Step 2: Global Filters ───
+# Inject CSS so any dropdown option “NOT FOUND” is red
+st.markdown(
+    """
+    <style>
+      select option[value="NOT FOUND"] {
+        color: red !important;
+      }
+      /* ensure selected “NOT FOUND” also shows red */
+      div[data-baseweb="select"] [role="combobox"] div[aria-selected="true"] {
+        color: red !important;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.subheader("Step 2: Global Share Class Filters")
 filter_cols = [
     "Type of Share","Currency","Hedged",
@@ -71,6 +86,21 @@ with c5:
     global_filters["MiFID FH"] = st.selectbox("MiFID FH", opts["MiFID FH"])
 
 # ─── Step 3: Per‑Fund Cascading Dropdowns ───
+# Re-inject the same CSS so “NOT FOUND” is red here too
+st.markdown(
+    """
+    <style>
+      select option[value="NOT FOUND"] {
+        color: red !important;
+      }
+      div[data-baseweb="select"] [role="combobox"] div[aria-selected="true"] {
+        color: red !important;
+      }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 st.subheader("Step 3: Customize Share Class per Fund")
 st.write("🔽 Dropdowns only show valid combinations per fund")
 
@@ -172,13 +202,13 @@ if (
 ):
     st.subheader("Step 6: Compare Portfolios")
 
-    # always render any already-saved portfolios
+    # render saved portfolios
     for p in st.session_state.saved_portfolios:
         st.markdown(f"#### {p['label']}")
         st.metric("Weighted Average TER", f"{p['ter']:.2%}")
         st.dataframe(p["table"], use_container_width=True)
 
-    # then offer the next action
+    # next action
     if len(st.session_state.saved_portfolios) == 0:
         st.button("Save for Comparison", on_click=save_as_I, key="save1")
     elif len(st.session_state.saved_portfolios) == 1:
@@ -189,4 +219,5 @@ if (
         st.markdown("---")
         st.subheader("TER Difference (II − I)")
         st.metric("Difference", f"{diff:.2%}")
+
 
