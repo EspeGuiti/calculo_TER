@@ -51,15 +51,11 @@ df["Ongoing Charge"] = (
 )
 
 # ─── Step 2: Global Filters ───
-# Inject CSS so any “NOT FOUND” option is rendered in red
+# Inject CSS so any “NOT FOUND” option is red
 st.markdown(
     """
     <style>
-      /* Dropdown options */
-      select option[value="NOT FOUND"] {
-        color: red !important;
-      }
-      /* Selected “NOT FOUND” display */
+      select option[value="NOT FOUND"] { color: red !important; }
       div[data-baseweb="select"] [role="combobox"] div[aria-selected="true"] {
         color: red !important;
       }
@@ -67,14 +63,10 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 st.subheader("Step 2: Global Share Class Filters")
-filter_cols = [
-    "Type of Share","Currency","Hedged",
-    "Min. Initial","MiFID FH"
-]
+filter_cols = ["Type of Share","Currency","Hedged","Min. Initial","MiFID FH"]
 opts = {col: sorted(df[col].dropna().unique()) for col in filter_cols}
-c1, c2, c3, c4, c5 = st.columns(5)
+c1,c2,c3,c4,c5 = st.columns(5)
 global_filters = {}
 with c1:
     global_filters["Type of Share"] = st.selectbox("Type of Share", opts["Type of Share"])
@@ -87,14 +79,12 @@ with c4:
 with c5:
     global_filters["MiFID FH"] = st.selectbox("MiFID FH", opts["MiFID FH"])
 
-# ─── Step 3: Per-Fund Cascading Dropdowns ───
-# Re-inject CSS for “NOT FOUND” in these dropdowns as well
+# ─── Step 3: Per‑Fund Cascading Dropdowns ───
+# Re‑inject CSS for “NOT FOUND” here as well
 st.markdown(
     """
     <style>
-      select option[value="NOT FOUND"] {
-        color: red !important;
-      }
+      select option[value="NOT FOUND"] { color: red !important; }
       div[data-baseweb="select"] [role="combobox"] div[aria-selected="true"] {
         color: red !important;
       }
@@ -102,7 +92,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 st.subheader("Step 3: Customize Share Class per Fund")
 st.write("🔽 Dropdowns only show valid combinations per fund")
 
@@ -110,7 +99,7 @@ edited = []
 for idx, fam in enumerate(df["Family Name"].dropna().unique()):
     fund_df = df[df["Family Name"] == fam].copy()
     st.markdown(f"---\n#### {fam}")
-    cols = st.columns([1.7, 1.2, 1.2, 1.7, 1.5, 1.3])
+    cols = st.columns([1.7,1.2,1.2,1.7,1.5,1.3])
     row = {"Family Name": fam, "Weight %": 0.0}
     context = fund_df
 
@@ -136,15 +125,25 @@ for idx, fam in enumerate(df["Family Name"].dropna().unique()):
     )
     edited.append(row)
 
-# ─── Total Weight Summary ───
+# ─── Total Weight + Equal Weight Button ───
 total_weight = sum(r["Weight %"] for r in edited)
-st.markdown("---")
-left, _ = st.columns([1, 3])
-with left:
+n_funds = len(edited)
+
+# callback to evenly distribute weights
+def equalize_weights():
+    equal_w = 100.0 / n_funds
+    for i in range(n_funds):
+        st.session_state[f"weight_{i}"] = equal_w
+
+col_sum, col_eq = st.columns([3,1])
+with col_sum:
     st.subheader("Total Weight")
     st.write(f"{total_weight:.2f}%")
     if abs(total_weight - 100.0) > 1e-6:
         st.warning("Total must sum to 100% before calculating TER")
+with col_eq:
+    st.button("Equal Weight", on_click=equalize_weights)
+
 st.divider()
 
 # ─── Step 4: Calculate TER ───
@@ -171,11 +170,7 @@ if st.button("Calculate TER", key="calc"):
         charge, weight = best["Ongoing Charge"], row["Weight %"]
         twc += charge * (weight / 100)
         tw  += weight
-        results.append({
-            **row,
-            "ISIN": best["ISIN"],
-            "Ongoing Charge": charge
-        })
+        results.append({**row, "ISIN": best["ISIN"], "Ongoing Charge": charge})
 
     df_res = pd.DataFrame(results)
     if tw > 0 and not errors:
