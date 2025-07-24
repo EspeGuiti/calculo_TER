@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import io
 
 st.set_page_config(layout="wide")
 st.markdown("# 📊 Portfolio TER Calculator")
@@ -26,10 +27,11 @@ def save_as_II():
         **st.session_state.current_portfolio
     })
 
-# ─── Step 1: Upload ───
+# ─── Step 1: Upload & Validate ───
 uploaded_file = st.file_uploader("Upload Excel file with share classes", type=["xlsx"])
 if not uploaded_file:
     st.stop()
+
 df = pd.read_excel(uploaded_file, skiprows=2)
 required = [
     "Family Name","Type of Share","Currency","Hedged",
@@ -49,15 +51,13 @@ df["Ongoing Charge"] = (
        .astype(float)
 )
 
-# ─── Step 2: Global Filters ───
-# Inject CSS so any dropdown option “NOT FOUND” is red
+# ─── Step 2: Global Filters (with red NOT FOUND) ───
 st.markdown(
     """
     <style>
       select option[value="NOT FOUND"] {
         color: red !important;
       }
-      /* ensure selected “NOT FOUND” also shows red */
       div[data-baseweb="select"] [role="combobox"] div[aria-selected="true"] {
         color: red !important;
       }
@@ -65,12 +65,8 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 st.subheader("Step 2: Global Share Class Filters")
-filter_cols = [
-    "Type of Share","Currency","Hedged",
-    "Min. Initial","MiFID FH"
-]
+filter_cols = ["Type of Share","Currency","Hedged","Min. Initial","MiFID FH"]
 opts = {col: sorted(df[col].dropna().unique()) for col in filter_cols}
 c1,c2,c3,c4,c5 = st.columns(5)
 global_filters = {}
@@ -85,8 +81,7 @@ with c4:
 with c5:
     global_filters["MiFID FH"] = st.selectbox("MiFID FH", opts["MiFID FH"])
 
-# ─── Step 3: Per‑Fund Cascading Dropdowns ───
-# Re-inject the same CSS so “NOT FOUND” is red here too
+# ─── Step 3: Per‑Fund Dropdowns (with red NOT FOUND) ───
 st.markdown(
     """
     <style>
@@ -100,7 +95,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 st.subheader("Step 3: Customize Share Class per Fund")
 st.write("🔽 Dropdowns only show valid combinations per fund")
 
@@ -134,7 +128,7 @@ for idx, fam in enumerate(df["Family Name"].dropna().unique()):
     )
     edited.append(row)
 
-# ─── Total Weight Summary ───
+# ─── Total Weight ───
 total_weight = sum(r["Weight %"] for r in edited)
 st.markdown("---")
 left, _ = st.columns([1,3])
@@ -156,11 +150,11 @@ if st.button("Calculate TER", key="calc"):
             continue
         match = df[
             (df["Family Name"] == row["Family Name"]) &
-            (df["Type of Share"] == row["Type of Share"]) &
-            (df["Currency"] == row["Currency"]) &
-            (df["Hedged"] == row["Hedged"]) &
-            (df["Min. Initial"] == row["Min. Initial"]) &
-            (df["MiFID FH"] == row["MiFID FH"])
+            (df["Type of Share"]   == row["Type of Share"]) &
+            (df["Currency"]        == row["Currency"]) &
+            (df["Hedged"]          == row["Hedged"]) &
+            (df["Min. Initial"]    == row["Min. Initial"]) &
+            (df["MiFID FH"]        == row["MiFID FH"])
         ]
         if match.empty:
             errors.append((row["Family Name"], "No matching share class"))
@@ -177,24 +171,46 @@ if st.button("Calculate TER", key="calc"):
 
     df_res = pd.DataFrame(results)
     if tw > 0 and not errors:
-        st.session_state.current_portfolio = {"table": df_res, "ter": twc / (tw / 100)}
+        ter = twc / (tw / 100)
+        st.session_state.current_portfolio = {"table": df_res, "ter": ter}
     else:
         st.session_state.current_portfolio = {"table": df_res, "ter": None}
     st.session_state.current_errors = errors
 
-# ─── Step 5: Show current portfolio ───
+# ─── Step 5: Show & Export Current Portfolio ───
 if st.session_state.current_portfolio:
     cp = st.session_state.current_portfolio
     st.subheader("Step 5: Final Fund Table with ISINs and Charges")
     st.dataframe(cp["table"], use_container_width=True)
     if cp["ter"] is not None:
         st.metric("📊 Weighted Average TER", f"{cp['ter']:.2%}")
+
+    # CSV download
+    csv = cp["table"].to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label="Download current portfolio as CSV",
+        data=csv,
+        file_name="current_portfolio.csv",
+        mime="text/csv",
+    )
+    # Excel download
+    towrite = io.BytesIO()
+    with pd.ExcelWriter(towrite, engine="xlsxwriter") as writer:
+        cp["table"].to_excel(writer, index=False, sheet_name="Portfolio")
+    towrite.seek(0)
+    st.download_button(
+        label="Download current portfolio as Excel",
+        data=towrite,
+        file_name="current_portfolio.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
     if st.session_state.current_errors:
         st.subheader("⚠️ Issues Detected")
         for fam, msg in st.session_state.current_errors:
             st.error(f"{fam}: {msg}")
 
-# ─── Step 6: Compare Portfolios ───
+# ─── Step 6: Compare & Export Saved Portfolios ───
 if (
     st.session_state.current_portfolio
     and st.session_state.current_portfolio["ter"] is not None
@@ -202,13 +218,34 @@ if (
 ):
     st.subheader("Step 6: Compare Portfolios")
 
-    # render saved portfolios
+    # render any saved portfolios
     for p in st.session_state.saved_portfolios:
         st.markdown(f"#### {p['label']}")
         st.metric("Weighted Average TER", f"{p['ter']:.2%}")
         st.dataframe(p["table"], use_container_width=True)
 
-    # next action
+        # CSV download
+        csv2 = p["table"].to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label=f"Download {p['label']} as CSV",
+            data=csv2,
+            file_name=f"{p['label'].lower().replace(' ', '_')}.csv",
+            mime="text/csv",
+            key=f"csv_{p['label']}"
+        )
+        # Excel download
+        towrite2 = io.BytesIO()
+        with pd.ExcelWriter(towrite2, engine="xlsxwriter") as writer:
+            p["table"].to_excel(writer, index=False, sheet_name=p["label"])
+        towrite2.seek(0)
+        st.download_button(
+            label=f"Download {p['label']} as Excel",
+            data=towrite2,
+            file_name=f"{p['label'].lower().replace(' ', '_')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"xlsx_{p['label']}"
+        )
+
     if len(st.session_state.saved_portfolios) == 0:
         st.button("Save for Comparison", on_click=save_as_I, key="save1")
     elif len(st.session_state.saved_portfolios) == 1:
@@ -219,5 +256,3 @@ if (
         st.markdown("---")
         st.subheader("TER Difference (II − I)")
         st.metric("Difference", f"{diff:.2%}")
-
-
