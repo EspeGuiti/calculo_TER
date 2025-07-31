@@ -33,8 +33,8 @@ if not uploaded_file:
 
 df = pd.read_excel(uploaded_file, skiprows=2)
 required = [
-    "Family Name","Type of Share","Currency","Hedged",
-    "Min. Initial","MiFID FH","Ongoing Charge","ISIN"
+    "Family Name", "Type of Share", "Currency", "Hedged",
+    "Min. Initial", "MiFID FH", "Ongoing Charge", "ISIN", "Prospectus AF"
 ]
 missing = [c for c in required if c not in df.columns]
 if missing:
@@ -55,7 +55,9 @@ df["Ongoing Charge"] = (
 st.markdown(
     """
     <style>
-      select option[value="NOT FOUND"] { color: red !important; }
+      select option[value="NOT FOUND"] {
+        color: red !important;
+      }
       div[data-baseweb="select"] [role="combobox"] div[aria-selected="true"] {
         color: red !important;
       }
@@ -64,9 +66,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 st.subheader("Step 2: Global Share Class Filters")
-filter_cols = ["Type of Share","Currency","Hedged","Min. Initial","MiFID FH"]
+filter_cols = ["Type of Share", "Currency", "Hedged", "Min. Initial", "MiFID FH"]
 opts = {col: sorted(df[col].dropna().unique()) for col in filter_cols}
-c1,c2,c3,c4,c5 = st.columns(5)
+c1, c2, c3, c4, c5 = st.columns(5)
 global_filters = {}
 with c1:
     global_filters["Type of Share"] = st.selectbox("Type of Share", opts["Type of Share"])
@@ -79,12 +81,14 @@ with c4:
 with c5:
     global_filters["MiFID FH"] = st.selectbox("MiFID FH", opts["MiFID FH"])
 
-# ─── Step 3: Per‑Fund Cascading Dropdowns ───
-# Re‑inject CSS for “NOT FOUND” here as well
+# ─── Step 3: Per-Fund Cascading Dropdowns ───
+# Re-inject CSS for “NOT FOUND” here as well
 st.markdown(
     """
     <style>
-      select option[value="NOT FOUND"] { color: red !important; }
+      select option[value="NOT FOUND"] {
+        color: red !important;
+      }
       div[data-baseweb="select"] [role="combobox"] div[aria-selected="true"] {
         color: red !important;
       }
@@ -99,26 +103,35 @@ edited = []
 for idx, fam in enumerate(df["Family Name"].dropna().unique()):
     fund_df = df[df["Family Name"] == fam].copy()
     st.markdown(f"---\n#### {fam}")
-    cols = st.columns([1.7,1.2,1.2,1.7,1.5,1.3])
+    # seven columns: five global filters, plus Prospectus AF, plus Weight
+    cols = st.columns([1.5, 1.1, 1.1, 1.5, 1.3, 1.3, 1.2])
     row = {"Family Name": fam, "Weight %": 0.0}
     context = fund_df
 
     def cascade(i, label, key, ctx):
         opts = sorted(ctx[key].dropna().unique().tolist())
-        init = global_filters[key] if global_filters[key] in opts else "NOT FOUND"
+        # for global-filtered keys, start with the global selection if available
+        if key in global_filters:
+            init = global_filters[key] if global_filters[key] in opts else "NOT FOUND"
+        else:
+            # for Prospectus AF, default to first value
+            init = opts[0] if opts else "NOT FOUND"
         if init == "NOT FOUND":
             opts = ["NOT FOUND"] + opts
         sel = cols[i].selectbox(label, opts, index=opts.index(init), key=f"{key}_{idx}")
         new_ctx = ctx[ctx[key] == sel] if sel != "NOT FOUND" else ctx
         return sel, new_ctx
 
+    # apply cascading selects
     row["Type of Share"], context = cascade(0, "Type of Share", "Type of Share", context)
     row["Currency"],     context = cascade(1, "Currency",     "Currency",     context)
     row["Hedged"],       context = cascade(2, "Hedged",       "Hedged",       context)
     row["Min. Initial"], context = cascade(3, "Min. Initial", "Min. Initial", context)
     row["MiFID FH"],     context = cascade(4, "MiFID FH",     "MiFID FH",     context)
+    row["Prospectus AF"], context = cascade(5, "Prospectus AF", "Prospectus AF", context)
 
-    row["Weight %"] = cols[5].number_input(
+    # weight input
+    row["Weight %"] = cols[6].number_input(
         "Weight %",
         min_value=0.0, max_value=100.0, step=0.1,
         key=f"weight_{idx}"
@@ -129,13 +142,13 @@ for idx, fam in enumerate(df["Family Name"].dropna().unique()):
 total_weight = sum(r["Weight %"] for r in edited)
 n_funds = len(edited)
 
-# callback to evenly distribute weights
 def equalize_weights():
-    equal_w = 100.0 / n_funds
-    for i in range(n_funds):
-        st.session_state[f"weight_{i}"] = equal_w
+    if n_funds > 0:
+        w = 100.0 / n_funds
+        for i in range(n_funds):
+            st.session_state[f"weight_{i}"] = w
 
-col_sum, col_eq = st.columns([3,1])
+col_sum, col_eq = st.columns([3, 1])
 with col_sum:
     st.subheader("Total Weight")
     st.write(f"{total_weight:.2f}%")
@@ -152,7 +165,7 @@ if st.button("Calculate TER", key="calc"):
     results, errors = [], []
     twc, tw = 0.0, 0.0
     for row in edited:
-        if "NOT FOUND" in [row[c] for c in filter_cols]:
+        if "NOT FOUND" in [row[c] for c in filter_cols + ["Prospectus AF"]]:
             errors.append((row["Family Name"], "Invalid selections"))
             continue
         match = df[
@@ -161,7 +174,8 @@ if st.button("Calculate TER", key="calc"):
             (df["Currency"]        == row["Currency"]) &
             (df["Hedged"]          == row["Hedged"]) &
             (df["Min. Initial"]    == row["Min. Initial"]) &
-            (df["MiFID FH"]        == row["MiFID FH"])
+            (df["MiFID FH"]        == row["MiFID FH"]) &
+            (df["Prospectus AF"]   == row["Prospectus AF"])
         ]
         if match.empty:
             errors.append((row["Family Name"], "No matching share class"))
@@ -170,7 +184,11 @@ if st.button("Calculate TER", key="calc"):
         charge, weight = best["Ongoing Charge"], row["Weight %"]
         twc += charge * (weight / 100)
         tw  += weight
-        results.append({**row, "ISIN": best["ISIN"], "Ongoing Charge": charge})
+        results.append({
+            **row,
+            "ISIN": best["ISIN"],
+            "Ongoing Charge": charge
+        })
 
     df_res = pd.DataFrame(results)
     if tw > 0 and not errors:
@@ -198,7 +216,6 @@ if (
     and not st.session_state.current_errors
 ):
     st.subheader("Step 6: Compare Portfolios")
-
     for p in st.session_state.saved_portfolios:
         st.markdown(f"#### {p['label']}")
         st.metric("Weighted Average TER", f"{p['ter']:.2%}")
@@ -214,4 +231,3 @@ if (
         st.markdown("---")
         st.subheader("TER Difference (II − I)")
         st.metric("Difference", f"{diff:.2%}")
-
