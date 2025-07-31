@@ -26,17 +26,17 @@ def save_as_II():
         **st.session_state.current_portfolio
     })
 
-# ─── Step 1: Upload master share‐class file ───
-uploaded_file = st.file_uploader("Upload Excel file with all share-class data", type=["xlsx"])
-if not uploaded_file:
+# ─── Step 1: Upload master share-class file ───
+master_file = st.file_uploader("Upload Excel file with all share-class data", type=["xlsx"])
+if not master_file:
     st.stop()
-df = pd.read_excel(uploaded_file, skiprows=2)
 
-required = [
+df = pd.read_excel(master_file, skiprows=2)
+required_cols = [
     "Family Name","Type of Share","Currency","Hedged",
     "Min. Initial","MiFID FH","Ongoing Charge","ISIN","Prospectus AF"
 ]
-missing = [c for c in required if c not in df.columns]
+missing = [c for c in required_cols if c not in df.columns]
 if missing:
     st.error(f"Missing columns in master file: {missing}")
     st.stop()
@@ -58,6 +58,8 @@ mode = st.radio(
 )
 
 edited = []
+filter_cols = ["Type of Share","Currency","Hedged","Min. Initial","MiFID FH"]
+
 if mode == "Import Excel with existing ISINs & weights":
     # ─── Step 1b: Upload existing portfolio file ───
     weights_file = st.file_uploader(
@@ -71,25 +73,23 @@ if mode == "Import Excel with existing ISINs & weights":
             st.error(f"Missing in portfolio file: {miss2}")
         else:
             st.success("Existing portfolio loaded.")
-            # merge on ISIN
             merged = pd.merge(wdf, df, on="ISIN", how="left", validate="one_to_many")
             if merged["Family Name"].isnull().any():
                 bad = merged[merged["Family Name"].isnull()]["ISIN"].tolist()
                 st.error(f"No share-class data for ISIN(s): {bad}")
             else:
-                # build edited list
                 for _, row in merged.iterrows():
                     edited.append({
-                        "Family Name":    row["Family Name"],
-                        "Type of Share":  row["Type of Share"],
-                        "Currency":       row["Currency"],
-                        "Hedged":         row["Hedged"],
-                        "Min. Initial":   row["Min. Initial"],
-                        "MiFID FH":       row["MiFID FH"],
-                        "Prospectus AF":  row["Prospectus AF"],
-                        "Weight %":       float(row["Peso %"])
+                        "Family Name":   row["Family Name"],
+                        "Type of Share": row["Type of Share"],
+                        "Currency":      row["Currency"],
+                        "Hedged":        row["Hedged"],
+                        "Min. Initial":  row["Min. Initial"],
+                        "MiFID FH":      row["MiFID FH"],
+                        "Prospectus AF": row["Prospectus AF"],
+                        "Weight %":      float(row["Peso %"])
                     })
-                st.markdown("**Step 2 & 3 skipped: portfolio pre-filled from import.**")
+                st.markdown("**Portfolio pre-filled from import.**")
 else:
     # ─── Step 2: Global Filters ───
     st.markdown(
@@ -104,7 +104,6 @@ else:
         unsafe_allow_html=True
     )
     st.subheader("Step 2: Global Share Class Filters")
-    filter_cols = ["Type of Share","Currency","Hedged","Min. Initial","MiFID FH"]
     opts = {col: sorted(df[col].dropna().unique()) for col in filter_cols}
     c1,c2,c3,c4,c5 = st.columns(5)
     global_filters = {}
@@ -137,6 +136,7 @@ else:
     for idx, fam in enumerate(df["Family Name"].dropna().unique()):
         fund_df = df[df["Family Name"] == fam].copy()
         st.markdown(f"---\n#### {fam}")
+        # seven columns: five filters + Prospectus AF + weight
         cols = st.columns([1.5,1.1,1.1,1.5,1.3,1.3,1.2])
         row = {"Family Name": fam}
         context = fund_df
@@ -150,16 +150,13 @@ else:
             new_ctx = ctx[ctx[key] == sel] if sel != "NOT FOUND" else ctx
             return sel, new_ctx
 
-        # five globals
         row["Type of Share"], context = cascade(0, "Type of Share", "Type of Share", context)
         row["Currency"],     context = cascade(1, "Currency",     "Currency",     context)
         row["Hedged"],       context = cascade(2, "Hedged",       "Hedged",       context)
         row["Min. Initial"], context = cascade(3, "Min. Initial", "Min. Initial", context)
         row["MiFID FH"],     context = cascade(4, "MiFID FH",     "MiFID FH",     context)
-        # always include Prospectus AF
-        row["Prospectus AF"], context = cascade(5, "Prospectus AF", "Prospectus AF", context)
+        row["Prospectus AF"],context = cascade(5, "Prospectus AF","Prospectus AF",context)
 
-        # weight entry
         row["Weight %"] = cols[6].number_input(
             "Weight %",
             min_value=0.0, max_value=100.0, step=0.1,
@@ -167,30 +164,46 @@ else:
         )
         edited.append(row)
 
-# ─── Now steps 4–6 (Compute TER, show, compare) ───
+# ─── Total Weight Summary & Equal Weight Button ───
+total_weight = sum(r["Weight %"] for r in edited)
+n_funds = len(edited)
 
-# Step 4: Calculate TER
+def equalize_weights():
+    if n_funds > 0:
+        w = 100.0 / n_funds
+        for i in range(n_funds):
+            st.session_state[f"weight_{i}"] = w
+
+col_sum, col_eq = st.columns([3,1])
+with col_sum:
+    st.subheader("Total Weight")
+    st.write(f"{total_weight:.2f}%")
+    if abs(total_weight - 100.0) > 1e-6:
+        st.warning("Total must sum to 100% before calculating TER")
+with col_eq:
+    st.button("Equal Weight", on_click=equalize_weights)
+
+st.divider()
+
+# ─── Step 4: Calculate TER ───
 st.subheader("Step 4: Calculate ISIN, Ongoing Charge & TER")
 if st.button("Calculate TER"):
     results, errors = [], []
     total_weighted = 0.0
     total_w = 0.0
     for row in edited:
-        # ensure no NOT FOUND
-        if any(val == "NOT FOUND" for val in [row.get(k) for k in [
-            "Type of Share","Currency","Hedged",
-            "Min. Initial","MiFID FH","Prospectus AF"]]):
+        keys = ["Type of Share","Currency","Hedged","Min. Initial","MiFID FH","Prospectus AF"]
+        if any(row.get(k) == "NOT FOUND" for k in keys):
             errors.append((row["Family Name"], "Invalid selection"))
             continue
-        # find match
         match = df[
             (df["Family Name"] == row["Family Name"]) &
-            (df["Type of Share"] == row["Type of Share"]) &
-            (df["Currency"] == row["Currency"]) &
-            (df["Hedged"] == row["Hedged"]) &
-            (df["Min. Initial"] == row["Min. Initial"]) &
-            (df["MiFID FH"] == row["MiFID FH"]) &
-            (df["Prospectus AF"] == row["Prospectus AF"])
+            (df["Type of Share"]   == row["Type of Share"]) &
+            (df["Currency"]        == row["Currency"]) &
+            (df["Hedged"]          == row["Hedged"]) &
+            (df["Min. Initial"]    == row["Min. Initial"]) &
+            (df["MiFID FH"]        == row["MiFID FH"]) &
+            (df["Prospectus AF"]   == row["Prospectus AF"])
         ]
         if match.empty:
             errors.append((row["Family Name"], "No matching share class"))
@@ -201,15 +214,16 @@ if st.button("Calculate TER"):
         total_weighted += charge * (w/100)
         total_w += w
         results.append({**row, "ISIN": best["ISIN"], "Ongoing Charge": charge})
-    result_df = pd.DataFrame(results)
+
+    df_res = pd.DataFrame(results)
     if total_w > 0:
         ter = total_weighted / (total_w/100)
-        st.session_state.current_portfolio = {"table": result_df, "ter": ter}
+        st.session_state.current_portfolio = {"table": df_res, "ter": ter}
     else:
-        st.session_state.current_portfolio = {"table": result_df, "ter": None}
+        st.session_state.current_portfolio = {"table": df_res, "ter": None}
     st.session_state.current_errors = errors
 
-# Step 5: Display current portfolio
+# ─── Step 5: Display current portfolio ───
 if st.session_state.current_portfolio:
     cp = st.session_state.current_portfolio
     st.subheader("Step 5: Final Fund Table with ISINs and Charges")
@@ -221,7 +235,7 @@ if st.session_state.current_portfolio:
         for fam, msg in st.session_state.current_errors:
             st.error(f"{fam}: {msg}")
 
-# Step 6: Compare portfolios
+# ─── Step 6: Compare portfolios ───
 if (
     st.session_state.current_portfolio and
     st.session_state.current_portfolio["ter"] is not None and
@@ -242,3 +256,4 @@ if (
         st.markdown("---")
         st.subheader("TER Difference (II − I)")
         st.metric("Difference", f"{diff:.2%}")
+
