@@ -153,9 +153,9 @@ else:
             return sel, new_ctx
 
         # Orden: Type, Currency, Hedged, MiFID FH, Min. Initial
-        row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
+        row["Type of Share"], context = cascade(0, "Tipo de clase", "Type of Share", context)
         row["Currency"],     context = cascade(1, "Divisa",                 "Currency",     context)
-        row["Hedged"],       context = cascade(2, "Cobertura (Hedged)",     "Hedged",       context)
+        row["Hedged"],       context = cascade(2, "Hedged",     "Hedged",       context)
         row["MiFID FH"],     context = cascade(3, "MiFID FH",               "MiFID FH",     context)
         row["Min. Initial"], context = cascade(4, "Mín. Inversión",         "Min. Initial", context)
 
@@ -207,7 +207,7 @@ with col_eq:
 st.divider()
 
 # ─── Paso 4: Calcular TER (sin usar Prospectus AF para emparejar) ───
-st.subheader("Paso 4: Calcular ISIN, comisión corriente (Ongoing Charge) y TER")
+st.subheader("Paso 4: Calcular TER de Cartera")
 if st.button("Calcular TER"):
     results, errors = [], []
     total_weighted = 0.0
