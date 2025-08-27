@@ -33,7 +33,6 @@ if not master_file:
 
 df = pd.read_excel(master_file, skiprows=2)
 
-# Columnas mínimas requeridas
 required_cols = [
     "Family Name","Type of Share","Currency","Hedged",
     "MiFID FH","Min. Initial","Ongoing Charge","ISIN","Prospectus AF"
@@ -43,9 +42,7 @@ if missing:
     st.error(f"Faltan columnas en el fichero maestro: {missing}")
     st.stop()
 
-# 'Traspasable' es opcional
-has_trasp = "Traspasable" in df.columns
-
+has_transferable = "Transferable" in df.columns
 st.success("Fichero maestro cargado correctamente.")
 
 # Limpieza Ongoing Charge
@@ -64,6 +61,7 @@ mode = st.radio(
 )
 
 edited = []
+# Orden: MiFID FH -> Min. Initial
 filter_cols = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
 
 if mode == "Importar Excel con ISINs y pesos existentes":
@@ -95,7 +93,6 @@ if mode == "Importar Excel con ISINs y pesos existentes":
                     })
                 st.markdown("**Cartera precargada desde la importación.**")
 else:
-    # ─── Paso 2: Filtros globales ───
     st.subheader("Paso 2: Filtros globales de clases de participación")
     opts = {col: sorted(df[col].dropna().unique()) for col in filter_cols}
     c1,c2,c3,c4,c5 = st.columns(5)
@@ -111,7 +108,6 @@ else:
     with c5:
         global_filters["Min. Initial"] = st.selectbox("Mín. Inversión", opts["Min. Initial"])
 
-    # ─── Paso 3: Selección manual ───
     st.subheader("Paso 3: Personaliza la clase por fondo")
     st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
 
@@ -132,7 +128,6 @@ else:
             new_ctx = ctx[ctx[key] == sel] if sel != "NO ENCONTRADO" else ctx
             return sel, new_ctx
 
-        # Filtros
         row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
         row["Currency"],     context = cascade(1, "Divisa", "Currency", context)
         row["Hedged"],       context = cascade(2, "Cobertura", "Hedged", context)
@@ -145,9 +140,9 @@ else:
             key=f"weight_{idx}"
         )
 
-        # Prospectus AF y Traspasable automáticos
+        # Prospectus AF + Transferable automáticos (apilados)
         prospectus_info = "—"
-        traspasable_info = "—"
+        transferable_info = "—"
         valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
         if valid:
             m = fund_df[
@@ -159,17 +154,17 @@ else:
             ]
             if not m.empty:
                 best = m.loc[m["Ongoing Charge"].idxmin()]
-                prospectus_info = str(best.get("Prospectus AF", "—"))
-                if has_trasp:
-                    traspasable_info = str(best.get("Traspasable", "—"))
+                prospectus_info  = str(best.get("Prospectus AF", "—"))
+                if has_transferable:
+                    transferable_info = str(best.get("Transferable", "—"))
 
         with cols[6]:
             st.markdown(f"**Prospectus AF:** {prospectus_info}")
-            st.markdown(f"**Traspasable:** {traspasable_info}")
+            st.markdown(f"**Traspasable:** {transferable_info}")
 
         edited.append(row)
 
-# ─── Resumen pesos ───
+# ─── Resumen de pesos + Reparto igual ───
 total_weight = sum(r["Weight %"] for r in edited)
 n_funds = len(edited)
 
@@ -221,13 +216,13 @@ if st.button("Calcular TER"):
         total_w += w
 
         result_row = {
-            **row,
+            **row,  # incluye Type of Share, Currency, Hedged, MiFID FH, Min. Initial, Weight %
             "ISIN": best["ISIN"],
             "Prospectus AF": best.get("Prospectus AF", "—"),
             "Ongoing Charge": charge
         }
-        if has_trasp:
-            result_row["Traspasable"] = best.get("Traspasable", "—")
+        if has_transferable:
+            result_row["Transferable"] = best.get("Transferable", "—")
         results.append(result_row)
 
     df_res = pd.DataFrame(results)
@@ -238,11 +233,30 @@ if st.button("Calcular TER"):
         st.session_state.current_portfolio = {"table": df_res, "ter": None}
     st.session_state.current_errors = errors
 
-# ─── Paso 5: Mostrar cartera actual ───
+# Utilidad: preparar tabla para mostrar con orden y etiquetas visuales
+def pretty_table(df_in: pd.DataFrame) -> pd.DataFrame:
+    tbl = df_in.copy()
+    # Renombrar solo para la vista
+    if "Traspasable" in tbl.columns:
+        pass
+    elif "Transferable" in tbl.columns:
+        tbl.rename(columns={"Transferable": "Traspasable"}, inplace=True)
+    # Orden deseado de columnas
+    desired = [
+        "Family Name",
+        "Type of Share", "Currency", "Hedged", "MiFID FH", "Min. Initial",
+        "ISIN", "Prospectus AF", "Traspasable",
+        "Ongoing Charge", "Weight %"
+    ]
+    existing = [c for c in desired if c in tbl.columns]
+    rest = [c for c in tbl.columns if c not in existing]
+    return tbl[existing + rest]
+
+# ─── Paso 5: Mostrar cartera ───
 if st.session_state.current_portfolio:
     cp = st.session_state.current_portfolio
-    st.subheader("Paso 5: Tabla final con ISIN, Prospectus AF, Traspasable y comisiones")
-    st.dataframe(cp["table"], use_container_width=True)
+    st.subheader("Paso 5: Tabla final con filtros, ISIN, Prospectus AF, Traspasable y comisiones")
+    st.dataframe(pretty_table(cp["table"]), use_container_width=True)
     if cp["ter"] is not None:
         st.metric("📊 TER medio ponderado", f"{cp['ter']:.2%}")
     if st.session_state.current_errors:
@@ -257,10 +271,14 @@ if (
     not st.session_state.current_errors
 ):
     st.subheader("Paso 6: Comparar carteras")
+
+    # Mostrar carteras guardadas con el mismo orden/etiquetas
     for p in st.session_state.saved_portfolios:
         st.markdown(f"#### {p['label']}")
         st.metric("TER medio ponderado", f"{p['ter']:.2%}")
-        st.dataframe(p["table"], use_container_width=True)
+        st.dataframe(pretty_table(p["table"]), use_container_width=True)
+
+    # Botones de acción
     if len(st.session_state.saved_portfolios) == 0:
         st.button("Guardar para comparar", on_click=save_as_I)
     elif len(st.session_state.saved_portfolios) == 1:
