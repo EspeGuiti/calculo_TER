@@ -32,17 +32,23 @@ if not master_file:
     st.stop()
 
 df = pd.read_excel(master_file, skiprows=2)
+
+# Columnas mínimas requeridas
 required_cols = [
     "Family Name","Type of Share","Currency","Hedged",
-    "Min. Initial","MiFID FH","Ongoing Charge","ISIN","Prospectus AF","Transferable"
+    "MiFID FH","Min. Initial","Ongoing Charge","ISIN","Prospectus AF"
 ]
 missing = [c for c in required_cols if c not in df.columns]
 if missing:
     st.error(f"Faltan columnas en el fichero maestro: {missing}")
     st.stop()
+
+# 'Traspasable' es opcional
+has_trasp = "Traspasable" in df.columns
+
 st.success("Fichero maestro cargado correctamente.")
 
-# Limpieza de Ongoing Charge
+# Limpieza Ongoing Charge
 df["Ongoing Charge"] = (
     df["Ongoing Charge"].astype(str)
        .str.replace("%","")
@@ -58,11 +64,11 @@ mode = st.radio(
 )
 
 edited = []
-filter_cols = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]  # orden: MiFID FH antes que Min. Initial
+filter_cols = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
 
 if mode == "Importar Excel con ISINs y pesos existentes":
     weights_file = st.file_uploader(
-        "Sube un Excel con las columnas 'ISIN' y 'Peso %'", type=["xlsx"], key="weights"
+        "Sube un Excel con columnas 'ISIN' y 'Peso %'", type=["xlsx"], key="weights"
     )
     if weights_file:
         wdf = pd.read_excel(weights_file)
@@ -75,7 +81,7 @@ if mode == "Importar Excel con ISINs y pesos existentes":
             merged = pd.merge(wdf, df, on="ISIN", how="left", validate="one_to_many")
             if merged["Family Name"].isnull().any():
                 bad = merged[merged["Family Name"].isnull()]["ISIN"].tolist()
-                st.error(f"No hay datos de clase de participación para los ISIN(s): {bad}")
+                st.error(f"No hay datos para ISIN(s): {bad}")
             else:
                 for _, row in merged.iterrows():
                     edited.append({
@@ -95,7 +101,7 @@ else:
     c1,c2,c3,c4,c5 = st.columns(5)
     global_filters = {}
     with c1:
-        global_filters["Type of Share"] = st.selectbox("Tipo de clase", opts["Type of Share"])
+        global_filters["Type of Share"] = st.selectbox("Tipo de participación", opts["Type of Share"])
     with c2:
         global_filters["Currency"] = st.selectbox("Divisa", opts["Currency"])
     with c3:
@@ -107,12 +113,13 @@ else:
 
     # ─── Paso 3: Selección manual ───
     st.subheader("Paso 3: Personaliza la clase por fondo")
-    st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente (no editables).*")
+    st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
 
     for idx, fam in enumerate(df["Family Name"].dropna().unique()):
         fund_df = df[df["Family Name"] == fam].copy()
         st.markdown(f"---\n#### {fam}")
-        cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.3,1.3])
+
+        cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
         row = {"Family Name": fam}
         context = fund_df
 
@@ -125,18 +132,23 @@ else:
             new_ctx = ctx[ctx[key] == sel] if sel != "NO ENCONTRADO" else ctx
             return sel, new_ctx
 
-        row["Type of Share"], context = cascade(0, "Tipo de clase", "Type of Share", context)
-        row["Currency"],     context = cascade(1, "Divisa",       "Currency",     context)
-        row["Hedged"],       context = cascade(2, "Cobertura",    "Hedged",       context)
-        row["MiFID FH"],     context = cascade(3, "MiFID FH",     "MiFID FH",     context)
-        row["Min. Initial"], context = cascade(4, "Mín. Inversión","Min. Initial", context)
+        # Filtros
+        row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
+        row["Currency"],     context = cascade(1, "Divisa", "Currency", context)
+        row["Hedged"],       context = cascade(2, "Cobertura", "Hedged", context)
+        row["MiFID FH"],     context = cascade(3, "MiFID FH", "MiFID FH", context)
+        row["Min. Initial"], context = cascade(4, "Mín. Inversión", "Min. Initial", context)
 
-        row["Weight %"] = cols[5].number_input("Peso %", min_value=0.0, max_value=100.0, step=0.1, key=f"weight_{idx}")
+        row["Weight %"] = cols[5].number_input(
+            "Peso %",
+            min_value=0.0, max_value=100.0, step=0.1,
+            key=f"weight_{idx}"
+        )
 
         # Prospectus AF y Traspasable automáticos
         prospectus_info = "—"
-        transferable_info = "—"
-        valid = all(row.get(k) != "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"])
+        traspasable_info = "—"
+        valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
         if valid:
             m = fund_df[
                 (fund_df["Type of Share"] == row["Type of Share"]) &
@@ -148,14 +160,16 @@ else:
             if not m.empty:
                 best = m.loc[m["Ongoing Charge"].idxmin()]
                 prospectus_info = str(best.get("Prospectus AF", "—"))
-                transferable_info = str(best.get("Transferable", "—"))
+                if has_trasp:
+                    traspasable_info = str(best.get("Traspasable", "—"))
 
-        cols[6].markdown(f"**Prospectus AF:** {prospectus_info}")
-        cols[7].markdown(f"**Traspasable:** {transferable_info}")
+        with cols[6]:
+            st.markdown(f"**Prospectus AF:** {prospectus_info}")
+            st.markdown(f"**Traspasable:** {traspasable_info}")
 
         edited.append(row)
 
-# ─── Resumen de pesos ───
+# ─── Resumen pesos ───
 total_weight = sum(r["Weight %"] for r in edited)
 n_funds = len(edited)
 
@@ -172,12 +186,12 @@ with col_sum:
     if abs(total_weight - 100.0) > 1e-6:
         st.warning("El peso total debe sumar 100% antes de calcular el TER.")
 with col_eq:
-    st.button("Equiponderar cartera", on_click=equalize_weights)
+    st.button("Repartir por igual", on_click=equalize_weights)
 
 st.divider()
 
 # ─── Paso 4: Calcular TER ───
-st.subheader("Paso 4: Calcular TER de Cartera")
+st.subheader("Paso 4: Calcular ISIN, Ongoing Charge, Prospectus AF, Traspasable y TER")
 if st.button("Calcular TER"):
     results, errors = [], []
     total_weighted = 0.0
@@ -191,13 +205,13 @@ if st.button("Calcular TER"):
         match = df[
             (df["Family Name"] == row["Family Name"]) &
             (df["Type of Share"] == row["Type of Share"]) &
-            (df["Currency"]     == row["Currency"]) &
-            (df["Hedged"]       == row["Hedged"]) &
-            (df["MiFID FH"]     == row["MiFID FH"]) &
+            (df["Currency"] == row["Currency"]) &
+            (df["Hedged"] == row["Hedged"]) &
+            (df["MiFID FH"] == row["MiFID FH"]) &
             (df["Min. Initial"] == row["Min. Initial"])
         ]
         if match.empty:
-            errors.append((row["Family Name"], "No se encontró una clase que coincida"))
+            errors.append((row["Family Name"], "No se encontró clase que coincida"))
             continue
 
         best = match.loc[match["Ongoing Charge"].idxmin()]
@@ -206,13 +220,15 @@ if st.button("Calcular TER"):
         total_weighted += charge * (w/100)
         total_w += w
 
-        results.append({
+        result_row = {
             **row,
             "ISIN": best["ISIN"],
             "Prospectus AF": best.get("Prospectus AF", "—"),
-            "Traspasable": best.get("Transferable", "—"),
             "Ongoing Charge": charge
-        })
+        }
+        if has_trasp:
+            result_row["Traspasable"] = best.get("Traspasable", "—")
+        results.append(result_row)
 
     df_res = pd.DataFrame(results)
     if total_w > 0:
@@ -241,23 +257,18 @@ if (
     not st.session_state.current_errors
 ):
     st.subheader("Paso 6: Comparar carteras")
-
+    for p in st.session_state.saved_portfolios:
+        st.markdown(f"#### {p['label']}")
+        st.metric("TER medio ponderado", f"{p['ter']:.2%}")
+        st.dataframe(p["table"], use_container_width=True)
     if len(st.session_state.saved_portfolios) == 0:
-        st.button("Guardar para comparativa", on_click=save_as_I, key="save_I")
+        st.button("Guardar para comparar", on_click=save_as_I)
     elif len(st.session_state.saved_portfolios) == 1:
-        st.button("Comparar con Cartera I", on_click=save_as_II, key="compare_with_I_top")
-        for p in st.session_state.saved_portfolios:
-            st.markdown(f"#### {p['label']}")
-            st.metric("TER medio ponderado", f"{p['ter']:.2%}")
-            st.dataframe(p["table"], use_container_width=True)
+        st.button("Comparar con la actual", on_click=save_as_II)
     else:
-        for p in st.session_state.saved_portfolios:
-            st.markdown(f"#### {p['label']}")
-            st.metric("TER medio ponderado", f"{p['ter']:.2%}")
-            st.dataframe(p["table"], use_container_width=True)
-
         p1, p2 = st.session_state.saved_portfolios
         diff = p2["ter"] - p1["ter"]
         st.markdown("---")
         st.subheader("Diferencia de TER (II − I)")
         st.metric("Diferencia", f"{diff:.2%}")
+
