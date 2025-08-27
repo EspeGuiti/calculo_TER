@@ -65,6 +65,9 @@ edited = []
 # Orden: MiFID FH -> Min. Initial (como pediste)
 filter_cols = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
 
+# Definir siempre para evitar NameError en funciones que lo referencian
+global_filters = {}
+
 if mode == "Importar Excel con ISINs y pesos existentes":
     weights_file = st.file_uploader(
         "Sube un Excel con columnas 'ISIN' y 'Peso %'", type=["xlsx"], key="weights"
@@ -93,11 +96,11 @@ if mode == "Importar Excel con ISINs y pesos existentes":
                         "Weight %":      float(row["Peso %"])
                     })
                 st.markdown("**Cartera precargada desde la importación.**")
+
 else:
     st.subheader("Paso 2: Filtros globales de clases de participación")
     opts = {col: sorted(df[col].dropna().unique()) for col in filter_cols}
     c1,c2,c3,c4,c5 = st.columns(5)
-    global_filters = {}
     with c1:
         global_filters["Type of Share"] = st.selectbox("Tipo de participación", opts["Type of Share"])
     with c2:
@@ -109,62 +112,62 @@ else:
     with c5:
         global_filters["Min. Initial"] = st.selectbox("Mín. Inversión", opts["Min. Initial"])
 
-   # ─── Paso 3: Personaliza la clase por fondo ───
-st.subheader("Paso 3: Personaliza la clase por fondo")
-st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
+    # ─── Paso 3: Personaliza la clase por fondo ───
+    st.subheader("Paso 3: Personaliza la clase por fondo")
+    st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
 
-for idx, fam in enumerate(df["Family Name"].dropna().unique()):
-    fund_df = df[df["Family Name"] == fam].copy()
-    st.markdown(f"---\n#### {fam}")
+    for idx, fam in enumerate(df["Family Name"].dropna().unique()):
+        fund_df = df[df["Family Name"] == fam].copy()
+        st.markdown(f"---\n#### {fam}")
 
-    cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
-    row = {"Family Name": fam}
-    context = fund_df
+        cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
+        row = {"Family Name": fam}
+        context = fund_df
 
-    def cascade(i, label, key, ctx):
-        options = sorted(ctx[key].dropna().unique().tolist())
-        init = global_filters[key] if key in global_filters and global_filters[key] in options else "NO ENCONTRADO"
-        if init == "NO ENCONTRADO":
-            options = ["NO ENCONTRADO"] + options
-        sel = cols[i].selectbox(label, options, index=options.index(init), key=f"{key}_{idx}")
-        new_ctx = ctx[ctx[key] == sel] if sel != "NO ENCONTRADO" else ctx
-        return sel, new_ctx
+        def cascade(i, label, key, ctx):
+            options = sorted(ctx[key].dropna().unique().tolist())
+            init = global_filters[key] if key in global_filters and global_filters[key] in options else "NO ENCONTRADO"
+            if init == "NO ENCONTRADO":
+                options = ["NO ENCONTRADO"] + options
+            sel = cols[i].selectbox(label, options, index=options.index(init), key=f"{key}_{idx}")
+            new_ctx = ctx[ctx[key] == sel] if sel != "NO ENCONTRADO" else ctx
+            return sel, new_ctx
 
-    row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
-    row["Currency"],     context = cascade(1, "Divisa", "Currency", context)
-    row["Hedged"],       context = cascade(2, "Cobertura", "Hedged", context)
-    row["MiFID FH"],     context = cascade(3, "MiFID FH", "MiFID FH", context)
-    row["Min. Initial"], context = cascade(4, "Mín. Inversión", "Min. Initial", context)
+        row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
+        row["Currency"],     context = cascade(1, "Divisa", "Currency", context)
+        row["Hedged"],       context = cascade(2, "Cobertura", "Hedged", context)
+        row["MiFID FH"],     context = cascade(3, "MiFID FH", "MiFID FH", context)
+        row["Min. Initial"], context = cascade(4, "Mín. Inversión", "Min. Initial", context)
 
-    row["Weight %"] = cols[5].number_input(
-        "Peso %",
-        min_value=0.0, max_value=100.0, step=0.1,
-        key=f"weight_{idx}"
-    )
+        row["Weight %"] = cols[5].number_input(
+            "Peso %",
+            min_value=0.0, max_value=100.0, step=0.1,
+            key=f"weight_{idx}"
+        )
 
-    # Prospectus AF + Transferable automáticos (apilados)
-    prospectus_info = "—"
-    transferable_info = "—"
-    valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
-    if valid:
-        m = fund_df[
-            (fund_df["Type of Share"] == row["Type of Share"]) &
-            (fund_df["Currency"]      == row["Currency"]) &
-            (fund_df["Hedged"]        == row["Hedged"]) &
-            (fund_df["MiFID FH"]      == row["MiFID FH"]) &
-            (fund_df["Min. Initial"]  == row["Min. Initial"])
-        ]
-        if not m.empty:
-            best = m.loc[m["Ongoing Charge"].idxmin()]
-            prospectus_info  = str(best.get("Prospectus AF", "—"))
-            if has_transferable:
-                transferable_info = str(best.get("Transferable", "—"))
+        # Prospectus AF + Transferable automáticos (apilados)
+        prospectus_info = "—"
+        transferable_info = "—"
+        valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
+        if valid:
+            m = fund_df[
+                (fund_df["Type of Share"] == row["Type of Share"]) &
+                (fund_df["Currency"]      == row["Currency"]) &
+                (fund_df["Hedged"]        == row["Hedged"]) &
+                (fund_df["MiFID FH"]      == row["MiFID FH"]) &
+                (fund_df["Min. Initial"]  == row["Min. Initial"])
+            ]
+            if not m.empty:
+                best = m.loc[m["Ongoing Charge"].idxmin()]
+                prospectus_info  = str(best.get("Prospectus AF", "—"))
+                if has_transferable:
+                    transferable_info = str(best.get("Transferable", "—"))
 
-    with cols[6]:
-        st.markdown(f"**Prospectus AF:** {prospectus_info}")
-        st.markdown(f"**Traspasable:** {transferable_info}")
+        with cols[6]:
+            st.markdown(f"**Prospectus AF:** {prospectus_info}")
+            st.markdown(f"**Traspasable:** {transferable_info}")
 
-    edited.append(row)
+        edited.append(row)
 
 # ─── Total Weight Summary & Equal Weight Button ───
 total_weight = sum(r["Weight %"] for r in edited)
@@ -281,7 +284,7 @@ if (
         st.button("Guardar para comparar", on_click=save_as_I, key="save_as_I_btn")
 
     elif num_saved == 1:
-        # Ya hay Cartera I; mostrar el botón ANTES de renderizar Cartera I
+        # Ya hay Cartera I; botón arriba para comparar con la actual
         st.button("Comparar con Cartera I", on_click=save_as_II, key="compare_with_I_btn")
 
         # Mostrar Cartera I guardada
