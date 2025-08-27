@@ -202,7 +202,7 @@ with col_sum:
     if abs(total_weight - 100.0) > 1e-6:
         st.warning("El peso total debe sumar 100% antes de calcular el TER.")
 with col_eq:
-    st.button("Repartir por igual", on_click=equalize_weights)
+    st.button("Equiponderar cartera", on_click=equalize_weights)
 
 st.divider()
 
