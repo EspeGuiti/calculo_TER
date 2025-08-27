@@ -109,61 +109,83 @@ else:
     with c5:
         global_filters["Min. Initial"] = st.selectbox("Mín. Inversión", opts["Min. Initial"])
 
-    st.subheader("Paso 3: Personaliza la clase por fondo")
-    st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
+   # ─── Paso 3: Personaliza la clase por fondo ───
+st.subheader("Paso 3: Personaliza la clase por fondo")
+st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
 
-    for idx, fam in enumerate(df["Family Name"].dropna().unique()):
-        fund_df = df[df["Family Name"] == fam].copy()
-        st.markdown(f"---\n#### {fam}")
+for idx, fam in enumerate(df["Family Name"].dropna().unique()):
+    fund_df = df[df["Family Name"] == fam].copy()
+    st.markdown(f"---\n#### {fam}")
 
-        cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
-        row = {"Family Name": fam}
-        context = fund_df
+    cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
+    row = {"Family Name": fam}
+    context = fund_df
 
-        def cascade(i, label, key, ctx):
-            options = sorted(ctx[key].dropna().unique().tolist())
-            init = global_filters[key] if key in global_filters and global_filters[key] in options else "NO ENCONTRADO"
-            if init == "NO ENCONTRADO":
-                options = ["NO ENCONTRADO"] + options
-            sel = cols[i].selectbox(label, options, index=options.index(init), key=f"{key}_{idx}")
-            new_ctx = ctx[ctx[key] == sel] if sel != "NO ENCONTRADO" else ctx
-            return sel, new_ctx
+    def cascade(i, label, key, ctx):
+        options = sorted(ctx[key].dropna().unique().tolist())
+        init = global_filters[key] if key in global_filters and global_filters[key] in options else "NO ENCONTRADO"
+        if init == "NO ENCONTRADO":
+            options = ["NO ENCONTRADO"] + options
+        sel = cols[i].selectbox(label, options, index=options.index(init), key=f"{key}_{idx}")
+        new_ctx = ctx[ctx[key] == sel] if sel != "NO ENCONTRADO" else ctx
+        return sel, new_ctx
 
-        row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
-        row["Currency"],     context = cascade(1, "Divisa", "Currency", context)
-        row["Hedged"],       context = cascade(2, "Cobertura", "Hedged", context)
-        row["MiFID FH"],     context = cascade(3, "MiFID FH", "MiFID FH", context)
-        row["Min. Initial"], context = cascade(4, "Mín. Inversión", "Min. Initial", context)
+    row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
+    row["Currency"],     context = cascade(1, "Divisa", "Currency", context)
+    row["Hedged"],       context = cascade(2, "Cobertura", "Hedged", context)
+    row["MiFID FH"],     context = cascade(3, "MiFID FH", "MiFID FH", context)
+    row["Min. Initial"], context = cascade(4, "Mín. Inversión", "Min. Initial", context)
 
-        row["Weight %"] = cols[5].number_input(
-            "Peso %",
-            min_value=0.0, max_value=100.0, step=0.1,
-            key=f"weight_{idx}"
-        )
+    row["Weight %"] = cols[5].number_input(
+        "Peso %",
+        min_value=0.0, max_value=100.0, step=0.1,
+        key=f"weight_{idx}"
+    )
 
-        # Prospectus AF + Transferable automáticos (apilados) para comprobación visual
-        prospectus_info = "—"
-        transferable_info = "—"
-        valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
-        if valid:
-            m = fund_df[
-                (fund_df["Type of Share"] == row["Type of Share"]) &
-                (fund_df["Currency"]      == row["Currency"]) &
-                (fund_df["Hedged"]        == row["Hedged"]) &
-                (fund_df["MiFID FH"]      == row["MiFID FH"]) &
-                (fund_df["Min. Initial"]  == row["Min. Initial"])
-            ]
-            if not m.empty:
-                best = m.loc[m["Ongoing Charge"].idxmin()]
-                prospectus_info  = str(best.get("Prospectus AF", "—"))
-                if has_transferable:
-                    transferable_info = str(best.get("Transferable", "—"))
+    # Prospectus AF + Transferable automáticos (apilados)
+    prospectus_info = "—"
+    transferable_info = "—"
+    valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
+    if valid:
+        m = fund_df[
+            (fund_df["Type of Share"] == row["Type of Share"]) &
+            (fund_df["Currency"]      == row["Currency"]) &
+            (fund_df["Hedged"]        == row["Hedged"]) &
+            (fund_df["MiFID FH"]      == row["MiFID FH"]) &
+            (fund_df["Min. Initial"]  == row["Min. Initial"])
+        ]
+        if not m.empty:
+            best = m.loc[m["Ongoing Charge"].idxmin()]
+            prospectus_info  = str(best.get("Prospectus AF", "—"))
+            if has_transferable:
+                transferable_info = str(best.get("Transferable", "—"))
 
-        with cols[6]:
-            st.markdown(f"**Prospectus AF:** {prospectus_info}")
-            st.markdown(f"**Traspasable:** {transferable_info}")
+    with cols[6]:
+        st.markdown(f"**Prospectus AF:** {prospectus_info}")
+        st.markdown(f"**Traspasable:** {transferable_info}")
 
-        edited.append(row)
+    edited.append(row)
+
+# ─── Total Weight Summary & Equal Weight Button ───
+total_weight = sum(r["Weight %"] for r in edited)
+n_funds = len(edited)
+
+def equalize_weights():
+    if n_funds > 0:
+        w = 100.0 / n_funds
+        for i in range(n_funds):
+            st.session_state[f"weight_{i}"] = w
+
+col_sum, col_eq = st.columns([3,1])
+with col_sum:
+    st.subheader("Total Weight")
+    st.write(f"{total_weight:.2f}%")
+    if abs(total_weight - 100.0) > 1e-6:
+        st.warning("Total must sum to 100% before calculating TER")
+with col_eq:
+    st.button("Equal Weight", on_click=equalize_weights)
+
+st.divider()
 
 # ─── Paso 4: Calcular TER ───
 st.subheader("Paso 4: Calcular ISIN, Ongoing Charge, Prospectus AF, Traspasable y TER")
