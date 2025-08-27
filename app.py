@@ -42,6 +42,7 @@ if missing:
     st.error(f"Faltan columnas en el fichero maestro: {missing}")
     st.stop()
 
+# Indicador de si existe la columna Transferable en el Excel
 has_transferable = "Transferable" in df.columns
 st.success("Fichero maestro cargado correctamente.")
 
@@ -61,7 +62,7 @@ mode = st.radio(
 )
 
 edited = []
-# Orden: MiFID FH -> Min. Initial
+# Orden: MiFID FH -> Min. Initial (como pediste)
 filter_cols = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
 
 if mode == "Importar Excel con ISINs y pesos existentes":
@@ -140,7 +141,7 @@ else:
             key=f"weight_{idx}"
         )
 
-        # Prospectus AF + Transferable automáticos (apilados)
+        # Prospectus AF + Transferable automáticos (apilados) para comprobación visual
         prospectus_info = "—"
         transferable_info = "—"
         valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
@@ -163,27 +164,6 @@ else:
             st.markdown(f"**Traspasable:** {transferable_info}")
 
         edited.append(row)
-
-# ─── Resumen de pesos + Reparto igual ───
-total_weight = sum(r["Weight %"] for r in edited)
-n_funds = len(edited)
-
-def equalize_weights():
-    if n_funds > 0:
-        w = 100.0 / n_funds
-        for i in range(n_funds):
-            st.session_state[f"weight_{i}"] = w
-
-col_sum, col_eq = st.columns([3,1])
-with col_sum:
-    st.subheader("Peso total")
-    st.write(f"{total_weight:.2f}%")
-    if abs(total_weight - 100.0) > 1e-6:
-        st.warning("El peso total debe sumar 100% antes de calcular el TER.")
-with col_eq:
-    st.button("Repartir por igual", on_click=equalize_weights)
-
-st.divider()
 
 # ─── Paso 4: Calcular TER ───
 st.subheader("Paso 4: Calcular ISIN, Ongoing Charge, Prospectus AF, Traspasable y TER")
@@ -233,15 +213,15 @@ if st.button("Calcular TER"):
         st.session_state.current_portfolio = {"table": df_res, "ter": None}
     st.session_state.current_errors = errors
 
-# Utilidad: preparar tabla para mostrar con orden y etiquetas visuales
+# ─── Utilidad: preparar tabla para mostrar con orden y etiquetas visuales ───
 def pretty_table(df_in: pd.DataFrame) -> pd.DataFrame:
     tbl = df_in.copy()
-    # Renombrar solo para la vista
+    # Renombrar para la vista Transferable -> Traspasable (sin tocar datos internos)
     if "Traspasable" in tbl.columns:
         pass
     elif "Transferable" in tbl.columns:
         tbl.rename(columns={"Transferable": "Traspasable"}, inplace=True)
-    # Orden deseado de columnas
+    # Orden de columnas deseado
     desired = [
         "Family Name",
         "Type of Share", "Currency", "Hedged", "MiFID FH", "Min. Initial",
@@ -272,13 +252,13 @@ if (
 ):
     st.subheader("Paso 6: Comparar carteras")
 
-    # Mostrar carteras guardadas con el mismo orden/etiquetas
+    # Mostrar las carteras guardadas con el mismo orden/etiquetas
     for p in st.session_state.saved_portfolios:
         st.markdown(f"#### {p['label']}")
         st.metric("TER medio ponderado", f"{p['ter']:.2%}")
         st.dataframe(pretty_table(p["table"]), use_container_width=True)
 
-    # Botones de acción
+    # Botones de acción (manteniendo tu flujo I / II)
     if len(st.session_state.saved_portfolios) == 0:
         st.button("Guardar para comparar", on_click=save_as_I)
     elif len(st.session_state.saved_portfolios) == 1:
@@ -289,4 +269,3 @@ if (
         st.markdown("---")
         st.subheader("Diferencia de TER (II − I)")
         st.metric("Diferencia", f"{diff:.2%}")
-
