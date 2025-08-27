@@ -274,20 +274,36 @@ if (
 ):
     st.subheader("Paso 6: Comparar carteras")
 
-    # Mostrar las carteras guardadas con el mismo orden/etiquetas
-    for p in st.session_state.saved_portfolios:
-        st.markdown(f"#### {p['label']}")
-        st.metric("TER medio ponderado", f"{p['ter']:.2%}")
-        st.dataframe(pretty_table(p["table"]), use_container_width=True)
+    num_saved = len(st.session_state.saved_portfolios)
 
-    # Botones de acción (manteniendo tu flujo I / II)
-    if len(st.session_state.saved_portfolios) == 0:
-        st.button("Guardar para comparar", on_click=save_as_I)
-    elif len(st.session_state.saved_portfolios) == 1:
-        st.button("Comparar con la actual", on_click=save_as_II)
+    if num_saved == 0:
+        # Todavía no hay Cartera I
+        st.button("Guardar para comparar", on_click=save_as_I, key="save_as_I_btn")
+
+    elif num_saved == 1:
+        # Ya hay Cartera I; mostrar el botón ANTES de renderizar Cartera I
+        st.button("Comparar con Cartera I", on_click=save_as_II, key="compare_with_I_btn")
+
+        # Mostrar Cartera I guardada
+        p1 = st.session_state.saved_portfolios[0]
+        st.markdown(f"#### {p1['label']}")
+        st.metric("TER medio ponderado", f"{p1['ter']:.2%}")
+        st.dataframe(pretty_table(p1["table"]), use_container_width=True)
+
     else:
-        p1, p2 = st.session_state.saved_portfolios
+        # Ya existen Cartera I y Cartera II: mostrar ambas y la diferencia
+        p1, p2 = st.session_state.saved_portfolios[0], st.session_state.saved_portfolios[1]
+
+        st.markdown(f"#### {p1['label']}")
+        st.metric("TER medio ponderado", f"{p1['ter']:.2%}")
+        st.dataframe(pretty_table(p1["table"]), use_container_width=True)
+
+        st.markdown(f"#### {p2['label']}")
+        st.metric("TER medio ponderado", f"{p2['ter']:.2%}")
+        st.dataframe(pretty_table(p2["table"]), use_container_width=True)
+
         diff = p2["ter"] - p1["ter"]
         st.markdown("---")
         st.subheader("Diferencia de TER (II − I)")
         st.metric("Diferencia", f"{diff:.2%}")
+
