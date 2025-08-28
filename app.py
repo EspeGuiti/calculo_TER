@@ -12,6 +12,8 @@ if "current_portfolio" not in st.session_state:
     st.session_state.current_portfolio = None
 if "current_errors" not in st.session_state:
     st.session_state.current_errors = []
+if "preview_ii" not in st.session_state:
+    st.session_state.preview_ii = False
 
 # NUEVO: flags/estado para poder editar una cartera importada
 if "edit_import_to_manual" not in st.session_state:
@@ -27,10 +29,15 @@ def save_as_I():
     })
 
 def save_as_II():
+    # Guarda la cartera actual como Cartera II
     st.session_state.saved_portfolios.append({
         "label": "Cartera II",
         **st.session_state.current_portfolio
     })
+    # Deja de mostrarla como "previsualización"
+    st.session_state.preview_ii = False
+    # (opcional) cierra el modo editor si estaba abierto
+    st.session_state.edit_import_to_manual = False
 
 # ─── Paso 1: Cargar fichero maestro ───
 master_file = st.file_uploader("Sube el Excel con TODAS las clases de participación", type=["xlsx"])
@@ -271,7 +278,16 @@ def pretty_table(df_in: pd.DataFrame) -> pd.DataFrame:
 # ─── Paso 5: Mostrar cartera ───
 if st.session_state.current_portfolio:
     cp = st.session_state.current_portfolio
-    st.subheader("Paso 5: Tabla final con filtros, ISIN, Prospectus AF, Traspasable y comisiones")
+
+    # NUEVO: título distinto si lo que vemos es la Cartera II en previsualización
+    if st.session_state.get("preview_ii", False):
+        st.subheader("Paso 5: Cartera II (previsualización) – tabla final con ISIN, Prospectus AF, Traspasable y comisiones")
+        # Nota de guía si ya existe Cartera I
+        if len(st.session_state.saved_portfolios) == 1:
+            st.info("Revisa esta **Cartera II (previsualización)**. Si está OK, en el Paso 6 pulsa **Comparar con Cartera I** para fijarla y comparar.")
+    else:
+        st.subheader("Paso 5: Tabla final con filtros, ISIN, Prospectus AF, Traspasable y comisiones")
+
     st.dataframe(pretty_table(cp["table"]), use_container_width=True)
     if cp["ter"] is not None:
         st.metric("📊 TER medio ponderado", f"{cp['ter']:.2%}")
@@ -401,64 +417,76 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         
     st.divider()
 
-   # Paso 4 (recalcular) para la cartera editada
-    st.subheader("Paso 4 (edición): Recalcular ISIN, Ongoing Charge y TER")
-    if st.button("Recalcular TER con la edición", key="recalc_from_edit"):
-        st.session_state.edited_rows = edited_from_import.copy()
-        results, errors = [], []
-        twc, tw = 0.0, 0.0
-        for row in edited_from_import:
-            if any(row.get(k) == "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]):
-                errors.append((row["Family Name"], "Selección inválida"))
-                continue
-            match = df[
-                (df["Family Name"] == row["Family Name"]) &
-                (df["Type of Share"] == row["Type of Share"]) &
-                (df["Currency"] == row["Currency"]) &
-                (df["Hedged"] == row["Hedged"]) &
-                (df["MiFID FH"] == row["MiFID FH"]) &
-                (df["Min. Initial"] == row["Min. Initial"])
-            ]
-            if match.empty:
-                errors.append((row["Family Name"], "No se encontró clase que coincida"))
-                continue
-            best = match.loc[match["Ongoing Charge"].idxmin()]
-            charge = best["Ongoing Charge"]
-            w = row["Weight %"]
-            twc += charge * (w/100)
-            tw  += w
-            out = {
-                **row,
-                "ISIN": best["ISIN"],
-                "Prospectus AF": best.get("Prospectus AF","—"),
-                "Ongoing Charge": charge
-            }
-            if has_transferable:
-                out["Transferable"] = best.get("Transferable","—")
-            results.append(out)
-    
-        df_res = pd.DataFrame(results)
-        ter = (twc / (tw/100)) if tw > 0 else None
-        st.session_state.current_portfolio = {"table": df_res, "ter": ter}
-        st.session_state.current_errors = errors
-    
-        # --- NUEVO: guardar automáticamente como Cartera II si ya existe Cartera I ---
-        if len(st.session_state.saved_portfolios) >= 1:
-            # si ya existía Cartera II, la sobrescribimos; si no, la creamos
-            ii_idx = next((i for i,p in enumerate(st.session_state.saved_portfolios)
-                           if p.get("label") == "Cartera II"), None)
-            cartera_ii = {"label": "Cartera II", **st.session_state.current_portfolio}
-            if ii_idx is None:
-                st.session_state.saved_portfolios.append(cartera_ii)
-            else:
-                st.session_state.saved_portfolios[ii_idx] = cartera_ii
-    
-            # opcional: cerrar editor para ir a la comparativa
-            st.session_state.edit_import_to_manual = False
-            st.success("Recalculado y guardado automáticamente como **Cartera II**. Ve al Paso 6 para ver la comparativa con Cartera I.")
+# ─── Paso 4 (edición): Recalcular ISIN, Ongoing Charge y TER ───
+st.subheader("Paso 4 (edición): Recalcular ISIN, Ongoing Charge y TER")
+
+if st.button("Recalcular TER con la edición", key="recalc_from_edit"):
+    # guarda lo que has editado por si hace falta reutilizarlo
+    st.session_state.edited_rows = edited_from_import.copy()
+
+    results, errors = [], []
+    twc, tw = 0.0, 0.0
+
+    for row in edited_from_import:
+        # Validación de selectores
+        if any(row.get(k) == "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]):
+            errors.append((row["Family Name"], "Selección inválida"))
+            continue
+
+        # Emparejar clase y tomar la de menor Ongoing Charge
+        match = df[
+            (df["Family Name"] == row["Family Name"]) &
+            (df["Type of Share"] == row["Type of Share"]) &
+            (df["Currency"] == row["Currency"]) &
+            (df["Hedged"] == row["Hedged"]) &
+            (df["MiFID FH"] == row["MiFID FH"]) &
+            (df["Min. Initial"] == row["Min. Initial"])
+        ]
+        if match.empty:
+            errors.append((row["Family Name"], "No se encontró clase que coincida"))
+            continue
+
+        best = match.loc[match["Ongoing Charge"].idxmin()]
+        charge = best["Ongoing Charge"]
+        w = row["Weight %"]
+
+        twc += charge * (w/100)
+        tw  += w
+
+        out = {
+            **row,
+            "ISIN": best["ISIN"],
+            "Prospectus AF": best.get("Prospectus AF", "—"),
+            "Ongoing Charge": charge,
+        }
+        if has_transferable:
+            out["Transferable"] = best.get("Transferable", "—")
+
+        results.append(out)
+
+    # Guardar cartera recalculada como "actual"
+    df_res = pd.DataFrame(results)
+    ter = (twc / (tw/100)) if tw > 0 else None
+    st.session_state.current_portfolio = {"table": df_res, "ter": ter}
+    st.session_state.current_errors = errors
+
+    # --- NUEVO: guardar automáticamente como Cartera II si ya existe Cartera I ---
+    if len(st.session_state.saved_portfolios) >= 1:
+        # Si ya existía Cartera II, la sobrescribimos; si no, la creamos
+        ii_idx = next(
+            (i for i, p in enumerate(st.session_state.saved_portfolios)
+             if p.get("label") == "Cartera II"),
+            None
+        )
+        cartera_ii = {"label": "Cartera II", **st.session_state.current_portfolio}
+        if ii_idx is None:
+            st.session_state.saved_portfolios.append(cartera_ii)
         else:
-            st.info("Recalculado. Aún no hay Cartera I guardada. Primero guarda una Cartera I para poder crear y comparar con Cartera II.")
-    
-            st.session_state.current_errors = errors
-    
-            st.success("Recalculado. Ahora puedes pulsar **Comparar con Cartera I** en el Paso 6 para guardar esta versión como Cartera II.")
+            st.session_state.saved_portfolios[ii_idx] = cartera_ii
+
+    # Cerrar el editor y dejar la Cartera II visible en Paso 5
+    st.session_state.edit_import_to_manual = False
+    st.session_state.preview_ii = True  # opcional: flag de “previsualización II”
+
+    st.success("✅ Cartera II recalculada y guardada. Sube al **Paso 5** para verla y al **Paso 6** para compararla con **Cartera I**.")
+
