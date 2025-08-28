@@ -331,20 +331,6 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
     st.subheader("Paso 3 (edición): Personaliza la clase por fondo (a partir de la cartera importada)")
     st.write("ℹ️ Los selectores y pesos se han precargado desde el Excel importado. Puedes cambiar la clase y recalcular el TER.")
 
-    # Filtros globales para ayudar a la selección (opcionales)
-    opts = {col: sorted(df[col].dropna().unique()) for col in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]}
-    c1,c2,c3,c4,c5 = st.columns(5)
-    with c1:
-        global_filters["Type of Share"] = st.selectbox("Tipo de participación (global)", opts["Type of Share"], index=0)
-    with c2:
-        global_filters["Currency"] = st.selectbox("Divisa (global)", opts["Currency"], index=0)
-    with c3:
-        global_filters["Hedged"] = st.selectbox("Cobertura (global)", opts["Hedged"], index=0)
-    with c4:
-        global_filters["MiFID FH"] = st.selectbox("MiFID FH (global)", opts["MiFID FH"], index=0)
-    with c5:
-        global_filters["Min. Initial"] = st.selectbox("Mín. Inversión (global)", opts["Min. Initial"], index=0)
-
     families = [r["Family Name"] for r in st.session_state.edited_rows]
     edited_from_import = []
 
@@ -361,14 +347,13 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
             options = sorted(ctx[key].dropna().unique().tolist())
             if prefill_value in options:
                 init = prefill_value
-            elif key in global_filters and global_filters[key] in options:
-                init = global_filters[key]
             else:
                 init = "NO ENCONTRADO"
                 options = ["NO ENCONTRADO"] + options
             sel = cols[i].selectbox(label, options, index=options.index(init), key=f"edit_{key}_{idx}")
             new_ctx = ctx[ctx[key] == sel] if sel != "NO ENCONTRADO" else ctx
             return sel, new_ctx
+
 
         row["Type of Share"], context = cascade_prefill(0, "Tipo de participación", "Type of Share", context, base_row.get("Type of Share"))
         row["Currency"],     context = cascade_prefill(1, "Divisa",                 "Currency",     context, base_row.get("Currency"))
