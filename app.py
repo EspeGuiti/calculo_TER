@@ -118,8 +118,9 @@ if mode == "Importar Excel con ISINs y pesos existentes":
                         "Weight %":      float(row["Peso %"])
                     })
                 st.markdown("**Cartera precargada desde la importación.**")
-                # NUEVO: guardar la cartera precargada para poder editarla luego
-                st.session_state.edited_rows = edited.copy()
+
+                # NUEVO: guardar la plantilla importada con pesos para poder editar luego
+                st.session_state.import_template = edited.copy()
 
 else:
     st.subheader("Paso 2: Filtros globales de clases de participación")
@@ -195,6 +196,39 @@ else:
 
     # NUEVO: guardar también la edición manual “corriente”
     st.session_state.edited_rows = edited.copy()
+
+    if mode == "Importar Excel con ISINs y pesos existentes":
+        weights_file = st.file_uploader(
+            "Sube un Excel con columnas 'ISIN' y 'Peso %'", type=["xlsx"], key="weights"
+        )
+        if weights_file:
+            wdf = pd.read_excel(weights_file)
+            req2 = ["ISIN","Peso %"]
+            miss2 = [c for c in req2 if c not in wdf.columns]
+            if miss2:
+                st.error(f"Faltan columnas en el fichero de cartera: {miss2}")
+            else:
+                st.success("Cartera existente cargada.")
+                merged = pd.merge(wdf, df, on="ISIN", how="left", validate="one_to_many")
+                if merged["Family Name"].isnull().any():
+                    bad = merged[merged["Family Name"].isnull()]["ISIN"].tolist()
+                    st.error(f"No hay datos para ISIN(s): {bad}")
+                else:
+                    for _, row in merged.iterrows():
+                        edited.append({
+                            "Family Name":   row["Family Name"],
+                            "Type of Share": row["Type of Share"],
+                            "Currency":      row["Currency"],
+                            "Hedged":        row["Hedged"],
+                            "MiFID FH":      row["MiFID FH"],
+                            "Min. Initial":  row["Min. Initial"],
+                            "Weight %":      float(row["Peso %"])
+                        })
+                    st.markdown("**Cartera precargada desde la importación.**")
+    
+                    # NUEVO: guardar la plantilla importada con pesos para poder editar luego
+                    st.session_state.import_template = edited.copy()
+
 
 # ─── Total Weight Summary & Equal Weight Button ───
 total_weight = sum(r["Weight %"] for r in edited)
