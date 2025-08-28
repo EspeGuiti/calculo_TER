@@ -405,26 +405,18 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
 
         edited_from_import.append(row)
 
-    # Resumen de pesos + botón repartir igual (edición)
+    # Resumen de pesos (manteniendo los pesos importados)
     total_weight2 = sum(r["Weight %"] for r in edited_from_import)
     n_funds2 = len(edited_from_import)
-    col_sum2, col_eq2 = st.columns([3,1])
-    with col_sum2:
-        st.subheader("Peso total (edición)")
-        st.write(f"{total_weight2:.2f}%")
-        if abs(total_weight2 - 100.0) > 1e-6:
-            st.warning("El peso total debe sumar 100% antes de calcular el TER.")
-    def equalize_weights_edit():
-        if n_funds2 > 0:
-            w = 100.0 / n_funds2
-            for i in range(n_funds2):
-                st.session_state[f"edit_weight_{i}"] = w
-    with col_eq2:
-        st.button("Repartir por igual", on_click=equalize_weights_edit, key="eq_edit_btn")
-
+    
+    st.subheader("Peso total (edición)")
+    st.write(f"{total_weight2:.2f}%")
+    if abs(total_weight2 - 100.0) > 1e-6:
+        st.warning("El peso total debe sumar 100% antes de calcular el TER.")
+        
     st.divider()
 
-    # Paso 4 (recalcular) para la cartera editada
+   # Paso 4 (recalcular) para la cartera editada
     st.subheader("Paso 4 (edición): Recalcular ISIN, Ongoing Charge y TER")
     if st.button("Recalcular TER con la edición", key="recalc_from_edit"):
         st.session_state.edited_rows = edited_from_import.copy()
@@ -450,14 +442,38 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
             w = row["Weight %"]
             twc += charge * (w/100)
             tw  += w
-            out = {**row, "ISIN": best["ISIN"], "Prospectus AF": best.get("Prospectus AF","—"), "Ongoing Charge": charge}
+            out = {
+                **row,
+                "ISIN": best["ISIN"],
+                "Prospectus AF": best.get("Prospectus AF","—"),
+                "Ongoing Charge": charge
+            }
             if has_transferable:
                 out["Transferable"] = best.get("Transferable","—")
             results.append(out)
-
+    
         df_res = pd.DataFrame(results)
         ter = (twc / (tw/100)) if tw > 0 else None
         st.session_state.current_portfolio = {"table": df_res, "ter": ter}
         st.session_state.current_errors = errors
-
-        st.success("Recalculado. Ahora puedes pulsar **Comparar con Cartera I** en el Paso 6 para guardar esta versión como Cartera II.")
+    
+        # --- NUEVO: guardar automáticamente como Cartera II si ya existe Cartera I ---
+        if len(st.session_state.saved_portfolios) >= 1:
+            # si ya existía Cartera II, la sobrescribimos; si no, la creamos
+            ii_idx = next((i for i,p in enumerate(st.session_state.saved_portfolios)
+                           if p.get("label") == "Cartera II"), None)
+            cartera_ii = {"label": "Cartera II", **st.session_state.current_portfolio}
+            if ii_idx is None:
+                st.session_state.saved_portfolios.append(cartera_ii)
+            else:
+                st.session_state.saved_portfolios[ii_idx] = cartera_ii
+    
+            # opcional: cerrar editor para ir a la comparativa
+            st.session_state.edit_import_to_manual = False
+            st.success("Recalculado y guardado automáticamente como **Cartera II**. Ve al Paso 6 para ver la comparativa con Cartera I.")
+        else:
+            st.info("Recalculado. Aún no hay Cartera I guardada. Primero guarda una Cartera I para poder crear y comparar con Cartera II.")
+    
+            st.session_state.current_errors = errors
+    
+            st.success("Recalculado. Ahora puedes pulsar **Comparar con Cartera I** en el Paso 6 para guardar esta versión como Cartera II.")
