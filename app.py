@@ -310,30 +310,28 @@ if (
         # Todavía no hay Cartera I
         st.button("Guardar para comparar", on_click=save_as_I, key="save_as_I_btn")
 
-    elif num_saved == 1:
-    # Cuando ya hay Cartera I, mostramos dos opciones:
-    # (1) Cargar cartera nueva (vuelve al paso inicial y limpia el uploader)
-    # (2) Comparar con cartera actual editada (carga Paso 3+4 con fondos/pesos importados)
-    if not st.session_state.edit_import_to_manual:
-        col_a, col_b = st.columns([1,1])
-        with col_a:
-            st.button("Cargar cartera nueva", on_click=reset_to_new, key="reset_to_new_btn")
-        with col_b:
-            st.button("Comparar con cartera actual editada", on_click=begin_edit_current, key="begin_edit_current_btn")
+   elif num_saved == 1:
+       # Comentarios explicativos
+       if not st.session_state.edit_import_to_manual:
+            col_a, col_b = st.columns([1,1])
+            with col_a:
+                st.button("Cargar cartera nueva", on_click=reset_to_new, key="reset_to_new_btn")
+            with col_b:
+                st.button("Comparar con cartera actual editada", on_click=begin_edit_current, key="begin_edit_current_btn")
 
-        # Mostramos Cartera I guardada como referencia
-        p1 = st.session_state.saved_portfolios[0]
-        st.markdown(f"#### {p1['label']}")
-        st.metric("TER medio ponderado", f"{p1['ter']:.2%}")
-        st.dataframe(pretty_table(p1["table"]), use_container_width=True)
+            # Mostramos Cartera I guardada como referencia
+            p1 = st.session_state.saved_portfolios[0]
+            st.markdown(f"#### {p1['label']}")
+            st.metric("TER medio ponderado", f"{p1['ter']:.2%}")
+            st.dataframe(pretty_table(p1["table"]), use_container_width=True)
 
-    else:
-        # Si estamos en modo edición (Paso 3/4 cargado automáticamente),
-        # aquí sí mostramos el botón para guardar la versión editada como Cartera II
-        st.button("Comparar con Cartera I", on_click=save_as_II, key="compare_with_I_btn")
+       else:
+            # Si estamos en modo edición (Paso 3/4 cargado automáticamente),
+            # aquí sí mostramos el botón para guardar la versión editada como Cartera II
+            st.button("Comparar con Cartera I", on_click=save_as_II, key="compare_with_I_btn")
 
-        # Y también mostramos Cartera I como referencia
-        p1 = st.session_state.saved_portfolios[0]
-        st.markdown(f"#### {p1['label']}")
-        st.metric("TER medio ponderado", f"{p1['ter']:.2%}")
-        st.dataframe(pretty_table(p1["table"]), use_container_width=True)
+            # Y también mostramos Cartera I como referencia
+            p1 = st.session_state.saved_portfolios[0]
+            st.markdown(f"#### {p1['label']}")
+            st.metric("TER medio ponderado", f"{p1['ter']:.2%}")
+            st.dataframe(pretty_table(p1["table"]), use_container_width=True)
