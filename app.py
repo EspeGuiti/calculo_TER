@@ -480,6 +480,6 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         # Cerrar editor y subir al Paso 6
         st.session_state.edit_import_to_manual = False
         st.toast("Cartera II guardada. Abriendo comparación…", icon="✅")
-        st.experimental_rerun()
+        st.rerun()
     
     
