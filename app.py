@@ -40,7 +40,7 @@ def save_as_II():
     st.session_state.edit_import_to_manual = False
 
 # ─── Paso 1: Cargar fichero maestro ───
-master_file = st.file_uploader("Sube el Excel con TODAS las clases de participación", type=["xlsx"])
+master_file = st.file_uploader("Sube el Excel de All Funds con TODAS las clases de participación", type=["xlsx"])
 if not master_file:
     st.stop()
 
@@ -52,12 +52,12 @@ required_cols = [
 ]
 missing = [c for c in required_cols if c not in df.columns]
 if missing:
-    st.error(f"Faltan columnas en el fichero maestro: {missing}")
+    st.error(f"Faltan columnas en el fichero importado: {missing}")
     st.stop()
 
 # Indicador de si existe la columna Transferable en el Excel
 has_transferable = "Transferable" in df.columns
-st.success("Fichero maestro cargado correctamente.")
+st.success("Fichero importado correctamente.")
 
 # Limpieza Ongoing Charge
 df["Ongoing Charge"] = (
@@ -121,7 +121,7 @@ else:
     with c2:
         global_filters["Currency"] = st.selectbox("Divisa", opts["Currency"])
     with c3:
-        global_filters["Hedged"] = st.selectbox("Cobertura", opts["Hedged"])
+        global_filters["Hedged"] = st.selectbox("Hedged", opts["Hedged"])
     with c4:
         global_filters["MiFID FH"] = st.selectbox("MiFID FH", opts["MiFID FH"])
     with c5:
@@ -150,7 +150,7 @@ else:
 
         row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
         row["Currency"],     context = cascade(1, "Divisa", "Currency", context)
-        row["Hedged"],       context = cascade(2, "Cobertura", "Hedged", context)
+        row["Hedged"],       context = cascade(2, "Hedged", "Hedged", context)
         row["MiFID FH"],     context = cascade(3, "MiFID FH", "MiFID FH", context)
         row["Min. Initial"], context = cascade(4, "Mín. Inversión", "Min. Initial", context)
 
@@ -209,7 +209,7 @@ with col_eq:
 st.divider()
 
 # ─── Paso 4: Calcular TER ───
-st.subheader("Paso 4: Calcular ISIN, Ongoing Charge, Prospectus AF, Traspasable y TER")
+st.subheader("Paso 4: Calcular TER")
 if st.button("Calcular TER"):
     results, errors = [], []
     total_weighted = 0.0
@@ -281,12 +281,12 @@ if st.session_state.current_portfolio:
 
     # NUEVO: título distinto si lo que vemos es la Cartera II en previsualización
     if st.session_state.get("preview_ii", False):
-        st.subheader("Paso 5: Cartera II (previsualización) – tabla final con ISIN, Prospectus AF, Traspasable y comisiones")
+        st.subheader("Paso 5: Cartera II (previsualización)")
         # Nota de guía si ya existe Cartera I
         if len(st.session_state.saved_portfolios) == 1:
             st.info("Revisa esta **Cartera II (previsualización)**. Si está OK, en el Paso 6 pulsa **Comparar con Cartera I** para fijarla y comparar.")
     else:
-        st.subheader("Paso 5: Tabla final con filtros, ISIN, Prospectus AF, Traspasable y comisiones")
+        st.subheader("Paso 5: Tabla final")
 
     st.dataframe(pretty_table(cp["table"]), use_container_width=True)
     if cp["ter"] is not None:
@@ -373,7 +373,7 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
 
         row["Type of Share"], context = cascade_prefill(0, "Tipo de participación", "Type of Share", context, base_row.get("Type of Share"))
         row["Currency"],     context = cascade_prefill(1, "Divisa",                 "Currency",     context, base_row.get("Currency"))
-        row["Hedged"],       context = cascade_prefill(2, "Cobertura",              "Hedged",       context, base_row.get("Hedged"))
+        row["Hedged"],       context = cascade_prefill(2, "Hedged",              "Hedged",       context, base_row.get("Hedged"))
         row["MiFID FH"],     context = cascade_prefill(3, "MiFID FH",               "MiFID FH",     context, base_row.get("MiFID FH"))
         row["Min. Initial"], context = cascade_prefill(4, "Mín. Inversión",         "Min. Initial", context, base_row.get("Min. Initial"))
 
