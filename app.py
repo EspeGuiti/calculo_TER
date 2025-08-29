@@ -191,22 +191,24 @@ else:
 total_weight = sum(r["Weight %"] for r in edited)
 n_funds = len(edited)
 
-def equalize_weights():
-    if n_funds > 0:
-        w = 100.0 / n_funds
-        for i in range(n_funds):
-            st.session_state[f"weight_{i}"] = w
-
 col_sum, col_eq = st.columns([3,1])
 with col_sum:
     st.subheader("Total Weight")
     st.write(f"{total_weight:.2f}%")
     if abs(total_weight - 100.0) > 1e-6:
         st.warning("Total must sum to 100% before calculating TER")
-with col_eq:
-    st.button("Equal Weight", on_click=equalize_weights)
 
-st.divider()
+# Solo mostrar el botón de reparto igual cuando el modo es MANUAL
+if mode == "Elegir manualmente pesos y clases de participación":
+    def equalize_weights():
+        if n_funds > 0:
+            w = 100.0 / n_funds
+            for i in range(n_funds):
+                st.session_state[f"weight_{i}"] = w
+
+    with col_eq:
+        st.button("Equal Weight", on_click=equalize_weights)
+
 
 # ─── Paso 4: Calcular TER ───
 st.subheader("Paso 4: Calcular TER")
@@ -314,15 +316,18 @@ if (
         # NUEVO: botón para abrir el editor (Paso 3) de la cartera actual
         if st.button("Editar esta cartera (cargar Paso 3)", key="edit_import_btn"):
             st.session_state.edit_import_to_manual = True
-
-        # Ya hay Cartera I; botón arriba para comparar con la actual
-        st.button("Comparar con Cartera I", on_click=save_as_II, key="compare_with_I_btn")
-
+    
+        # Usamos una variable para detectar si estamos en modo MANUAL
+        IS_MANUAL = mode.startswith("Elegir manualmente")
+        if IS_MANUAL:
+            st.button("Comparar con Cartera I", on_click=save_as_II, key="compare_with_I_btn")
+    
         # Mostrar Cartera I guardada
         p1 = st.session_state.saved_portfolios[0]
         st.markdown(f"#### {p1['label']}")
         st.metric("TER medio ponderado", f"{p1['ter']:.2%}")
         st.dataframe(pretty_table(p1["table"]), use_container_width=True)
+
 
     else:
         # Ya existen Cartera I y Cartera II: mostrar ambas y la diferencia
