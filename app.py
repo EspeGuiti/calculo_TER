@@ -370,5 +370,3 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         row["Hedged"],       context = cascade_prefill(2, "Hedged", "Hedged", context, base_row.get("Hedged"))
         row["MiFID FH"],     context = cascade_prefill(3, "MiFID FH", "MiFID FH", context, base_row.get("MiFID FH"))
         row["Min. Initial"], context
-
-    
