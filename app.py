@@ -241,7 +241,7 @@ if st.button("Calcular TER"):
         total_w += w
 
         result_row = {
-            **row,  # incluye Type of Share, Currency, Hedged, MiFID FH, Min. Initial, Weight %
+            **row,
             "ISIN": best["ISIN"],
             "Prospectus AF": best.get("Prospectus AF", "—"),
             "Ongoing Charge": charge
@@ -261,12 +261,10 @@ if st.button("Calcular TER"):
 # ─── Utilidad: preparar tabla para mostrar con orden y etiquetas visuales ───
 def pretty_table(df_in: pd.DataFrame) -> pd.DataFrame:
     tbl = df_in.copy()
-    # Renombrar para la vista Transferable -> Traspasable (sin tocar datos internos)
     if "Traspasable" in tbl.columns:
         pass
     elif "Transferable" in tbl.columns:
         tbl.rename(columns={"Transferable": "Traspasable"}, inplace=True)
-    # Orden de columnas deseado
     desired = [
         "Family Name",
         "Type of Share", "Currency", "Hedged", "MiFID FH", "Min. Initial",
@@ -280,11 +278,8 @@ def pretty_table(df_in: pd.DataFrame) -> pd.DataFrame:
 # ─── Paso 5: Mostrar cartera ───
 if st.session_state.current_portfolio:
     cp = st.session_state.current_portfolio
-
-    # NUEVO: título distinto si lo que vemos es la Cartera II en previsualización
     if st.session_state.get("preview_ii", False):
         st.subheader("Paso 5: Cartera II (previsualización)")
-        # Nota de guía si ya existe Cartera I
         if len(st.session_state.saved_portfolios) == 1:
             st.info("Revisa esta **Cartera II (previsualización)**. Si está OK, en el Paso 6 pulsa **Comparar con Cartera I** para fijarla y comparar.")
     else:
@@ -309,20 +304,16 @@ if (
     num_saved = len(st.session_state.saved_portfolios)
 
     if num_saved == 0:
-        # Todavía no hay Cartera I
         st.button("Guardar para comparar", on_click=save_as_I, key="save_as_I_btn")
 
     elif num_saved == 1:
-        # NUEVO: botón para abrir el editor (Paso 3) de la cartera actual
         if st.button("Editar esta cartera (cargar Paso 3)", key="edit_import_btn"):
             st.session_state.edit_import_to_manual = True
     
-        # Usamos una variable para detectar si estamos en modo MANUAL
         IS_MANUAL = mode.startswith("Elegir manualmente")
         if IS_MANUAL:
             st.button("Comparar con Cartera I", on_click=save_as_II, key="compare_with_I_btn")
     
-        # Mostrar Cartera I guardada
         p1 = st.session_state.saved_portfolios[0]
         st.markdown(f"#### {p1['label']}")
         st.metric("TER medio ponderado", f"{p1['ter']:.2%}")
@@ -330,7 +321,6 @@ if (
 
 
     else:
-        # Ya existen Cartera I y Cartera II: mostrar ambas y la diferencia
         p1, p2 = st.session_state.saved_portfolios[0], st.session_state.saved_portfolios[1]
 
         st.markdown(f"#### {p1['label']}")
@@ -375,116 +365,10 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
             new_ctx = ctx[ctx[key] == sel] if sel != "NO ENCONTRADO" else ctx
             return sel, new_ctx
 
-
         row["Type of Share"], context = cascade_prefill(0, "Tipo de participación", "Type of Share", context, base_row.get("Type of Share"))
-        row["Currency"],     context = cascade_prefill(1, "Divisa",                 "Currency",     context, base_row.get("Currency"))
-        row["Hedged"],       context = cascade_prefill(2, "Hedged",              "Hedged",       context, base_row.get("Hedged"))
-        row["MiFID FH"],     context = cascade_prefill(3, "MiFID FH",               "MiFID FH",     context, base_row.get("MiFID FH"))
-        row["Min. Initial"], context = cascade_prefill(4, "Mín. Inversión",         "Min. Initial", context, base_row.get("Min. Initial"))
+        row["Currency"],     context = cascade_prefill(1, "Divisa", "Currency", context, base_row.get("Currency"))
+        row["Hedged"],       context = cascade_prefill(2, "Hedged", "Hedged", context, base_row.get("Hedged"))
+        row["MiFID FH"],     context = cascade_prefill(3, "MiFID FH", "MiFID FH", context, base_row.get("MiFID FH"))
+        row["Min. Initial"], context
 
-        # Peso precargado
-        weight_key = f"edit_weight_{idx}"
-        if weight_key not in st.session_state:
-            st.session_state[weight_key] = float(base_row.get("Weight %", 0.0))
-        row["Weight %"] = cols[5].number_input("Peso %", min_value=0.0, max_value=100.0, step=0.1, key=weight_key)
-
-        # Info Prospectus / Traspasable automáticas
-        prospectus_info = "—"
-        transferable_info = "—"
-        valid = all(row.get(k) != "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"])
-        if valid:
-            m = fund_df[
-                (fund_df["Type of Share"] == row["Type of Share"]) &
-                (fund_df["Currency"]      == row["Currency"]) &
-                (fund_df["Hedged"]        == row["Hedged"]) &
-                (fund_df["MiFID FH"]      == row["MiFID FH"]) &
-                (fund_df["Min. Initial"]  == row["Min. Initial"])
-            ]
-            if not m.empty:
-                best = m.loc[m["Ongoing Charge"].idxmin()]
-                prospectus_info  = str(best.get("Prospectus AF", "—"))
-                if has_transferable:
-                    transferable_info = str(best.get("Transferable", "—"))
-        with cols[6]:
-            st.markdown(f"**Prospectus AF:** {prospectus_info}")
-            st.markdown(f"**Traspasable:** {transferable_info}")
-
-        edited_from_import.append(row)
-
-    # Resumen de pesos (manteniendo los pesos importados)
-    total_weight2 = sum(r["Weight %"] for r in edited_from_import)
-    n_funds2 = len(edited_from_import)
-    
-    st.subheader("Peso total (edición)")
-    st.write(f"{total_weight2:.2f}%")
-    if abs(total_weight2 - 100.0) > 1e-6:
-        st.warning("El peso total debe sumar 100% antes de calcular el TER.")
-        
-    st.divider()
-    # Botón único: calcular con la edición y guardar como Cartera II
-    if st.button("Comparar con Cartera I (guardar edición como Cartera II)", key="save_edit_as_ii_btn"):
-        # Usamos la edición actual en memoria
-        edited_from_import = st.session_state.edited_rows.copy()
-    
-        results, errors = [], []
-        twc, tw = 0.0, 0.0
-    
-        for row in edited_from_import:
-            # Validación
-            if any(row.get(k) == "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]):
-                errors.append((row["Family Name"], "Selección inválida"))
-                continue
-    
-            match = df[
-                (df["Family Name"] == row["Family Name"]) &
-                (df["Type of Share"] == row["Type of Share"]) &
-                (df["Currency"] == row["Currency"]) &
-                (df["Hedged"] == row["Hedged"]) &
-                (df["MiFID FH"] == row["MiFID FH"]) &
-                (df["Min. Initial"] == row["Min. Initial"])
-            ]
-            if match.empty:
-                errors.append((row["Family Name"], "No se encontró clase que coincida"))
-                continue
-    
-            best = match.loc[match["Ongoing Charge"].idxmin()]
-            charge = best["Ongoing Charge"]
-            w = row["Weight %"]
-    
-            twc += charge * (w/100)
-            tw  += w
-    
-            out = {
-                **row,
-                "ISIN": best["ISIN"],
-                "Prospectus AF": best.get("Prospectus AF","—"),
-                "Ongoing Charge": charge
-            }
-            if has_transferable:
-                out["Transferable"] = best.get("Transferable","—")
-    
-            results.append(out)
-    
-        df_res = pd.DataFrame(results)
-        ter = (twc / (tw/100)) if tw > 0 else None
-    
-        # Actualizamos cartera "actual" con la edición
-        st.session_state.current_portfolio = {"table": df_res, "ter": ter}
-        st.session_state.current_errors = errors
-    
-        # Guardar automáticamente como Cartera II si ya existe Cartera I
-        if len(st.session_state.saved_portfolios) >= 1:
-            cartera_ii = {"label": "Cartera II", **st.session_state.current_portfolio}
-            # Si ya hay una II, la reemplazamos; si no, la creamos
-            ii_idx = next((i for i,p in enumerate(st.session_state.saved_portfolios) if p.get("label")=="Cartera II"), None)
-            if ii_idx is None:
-                st.session_state.saved_portfolios.append(cartera_ii)
-            else:
-                st.session_state.saved_portfolios[ii_idx] = cartera_ii
-    
-        # Cerrar editor y subir al Paso 6
-        st.session_state.edit_import_to_manual = False
-        st.toast("Cartera II guardada. Abriendo comparación…", icon="✅")
-        st.rerun()
-    
     
