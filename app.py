@@ -484,3 +484,18 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         st.session_state.edit_import_to_manual = False
         st.toast("Cartera II guardada. Abriendo comparación…", icon="✅")
         st.rerun()
+
+# ─── Reiniciar app (siempre visible al final) ───
+def _reset_app():
+    # Limpia todo el estado de sesión
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
+    # Si usas cachés de datos o recursos, puedes descomentarlo:
+    # st.cache_data.clear()
+    # st.cache_resource.clear()
+    st.rerun()
+
+st.divider()
+if st.button("🔄 Reiniciar"):
+    _reset_app()
+
