@@ -498,4 +498,3 @@ def _reset_app():
 st.divider()
 if st.button("🔄 Reiniciar"):
     _reset_app()
-
