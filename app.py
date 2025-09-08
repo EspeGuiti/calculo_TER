@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import pandas as pd
 import numpy as np
 
@@ -119,7 +119,7 @@ else:
     with c5:
         global_filters["Min. Initial"] = st.selectbox("Mín. Inversión", opts["Min. Initial"])
 
-    # ─── Paso 3: Personaliza la clase por fondo ───
+    # ─── Paso 3: Personaliza la clase por fondo (cascada) ───
     st.subheader("Paso 3: Personaliza la clase por fondo")
     st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
 
@@ -129,20 +129,24 @@ else:
 
         cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
         row = {"Family Name": fam}
+        context = fund_df.copy()
 
-        def cascade(i, label, key, base_df):
-            options = sorted(base_df[key].dropna().unique().tolist())
-            init = global_filters[key] if key in global_filters and global_filters[key] in options else "NO ENCONTRADO"
+        def cascade(i, label, key, ctx):
+            options = sorted(ctx[key].dropna().unique().tolist())
+            init = global_filters.get(key)
+            init = init if (init in options) else "NO ENCONTRADO"
             if init == "NO ENCONTRADO":
                 options = ["NO ENCONTRADO"] + options
             sel = cols[i].selectbox(label, options, index=options.index(init), key=f"{key}_{idx}")
-            return sel
+            new_ctx = ctx if sel == "NO ENCONTRADO" else ctx[ctx[key] == sel]
+            return sel, new_ctx
 
-        row["Type of Share"] = cascade(0, "Tipo de participación", "Type of Share", fund_df)
-        row["Currency"]     = cascade(1, "Divisa",                 "Currency",     fund_df)
-        row["Hedged"]       = cascade(2, "Hedged",                 "Hedged",       fund_df)
-        row["MiFID FH"]     = cascade(3, "MiFID FH",               "MiFID FH",     fund_df)
-        row["Min. Initial"] = cascade(4, "Mín. Inversión",         "Min. Initial", fund_df)
+        # Orden en cascada
+        row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
+        row["Currency"],     context = cascade(1, "Divisa",                 "Currency",     context)
+        row["Hedged"],       context = cascade(2, "Hedged",                 "Hedged",       context)
+        row["MiFID FH"],     context = cascade(3, "MiFID FH",               "MiFID FH",     context)
+        row["Min. Initial"], context = cascade(4, "Mín. Inversión",         "Min. Initial", context)
 
         row["Weight %"] = cols[5].number_input(
             "Peso %",
@@ -150,23 +154,15 @@ else:
             key=f"weight_{idx}"
         )
 
-        # Info visual
+        # Info visual basada en el contexto final (combinación real)
         prospectus_info = "—"
         transferable_info = "—"
         valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
-        if valid:
-            m = fund_df[
-                (fund_df["Type of Share"] == row["Type of Share"]) &
-                (fund_df["Currency"]      == row["Currency"]) &
-                (fund_df["Hedged"]        == row["Hedged"]) &
-                (fund_df["MiFID FH"]      == row["MiFID FH"]) &
-                (fund_df["Min. Initial"]  == row["Min. Initial"])
-            ]
-            if not m.empty:
-                best = m.loc[m["Ongoing Charge"].idxmin()]
-                prospectus_info  = str(best.get("Prospectus AF", "—"))
-                if has_transferable:
-                    transferable_info = str(best.get("Transferable", "—"))
+        if valid and not context.empty:
+            best = context.loc[context["Ongoing Charge"].idxmin()]
+            prospectus_info  = str(best.get("Prospectus AF", "—"))
+            if has_transferable:
+                transferable_info = str(best.get("Transferable", "—"))
 
         with cols[6]:
             st.markdown(f"**Prospectus AF:** {prospectus_info}")
@@ -324,7 +320,7 @@ if (
         st.subheader("Diferencia de TER (II − I)")
         st.metric("Diferencia", f"{diff:.2%}")
 
-# ─── Editor tras importación: Paso 3 (prefill, sin cascadas) ───
+# ─── Editor tras importación: Paso 3 (prefill, EN CASCADA) ───
 if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
     st.markdown("---")
     st.subheader("Paso 3 (edición): Personaliza la clase por fondo (a partir de la cartera importada)")
@@ -340,21 +336,22 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         st.markdown(f"---\n#### {fam}")
         cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
         row = {"Family Name": fam}
+        context = fund_df.copy()
 
-        def pick(i, label, key, base_df, prefill_value):
-            options = sorted(base_df[key].dropna().unique().tolist())
-            if prefill_value in options:
-                init = prefill_value
-            else:
-                init = "NO ENCONTRADO"
+        def cascade_prefill(i, label, key, ctx, prefill_value):
+            options = sorted(ctx[key].dropna().unique().tolist())
+            init = prefill_value if (prefill_value in options) else "NO ENCONTRADO"
+            if init == "NO ENCONTRADO":
                 options = ["NO ENCONTRADO"] + options
-            return cols[i].selectbox(label, options, index=options.index(init), key=f"edit_{key}_{idx}")
+            sel = cols[i].selectbox(label, options, index=options.index(init), key=f"edit_{key}_{idx}")
+            new_ctx = ctx if sel == "NO ENCONTRADO" else ctx[ctx[key] == sel]
+            return sel, new_ctx
 
-        row["Type of Share"] = pick(0, "Tipo de participación", "Type of Share", fund_df, base_row.get("Type of Share"))
-        row["Currency"]     = pick(1, "Divisa",                 "Currency",     fund_df, base_row.get("Currency"))
-        row["Hedged"]       = pick(2, "Hedged",                 "Hedged",       fund_df, base_row.get("Hedged"))
-        row["MiFID FH"]     = pick(3, "MiFID FH",               "MiFID FH",     fund_df, base_row.get("MiFID FH"))
-        row["Min. Initial"] = pick(4, "Mín. Inversión",         "Min. Initial", fund_df, base_row.get("Min. Initial"))
+        row["Type of Share"], context = cascade_prefill(0, "Tipo de participación", "Type of Share", context, base_row.get("Type of Share"))
+        row["Currency"],     context = cascade_prefill(1, "Divisa",                 "Currency",     context, base_row.get("Currency"))
+        row["Hedged"],       context = cascade_prefill(2, "Hedged",                 "Hedged",       context, base_row.get("Hedged"))
+        row["MiFID FH"],     context = cascade_prefill(3, "MiFID FH",               "MiFID FH",     context, base_row.get("MiFID FH"))
+        row["Min. Initial"], context = cascade_prefill(4, "Mín. Inversión",         "Min. Initial", context, base_row.get("Min. Initial"))
 
         weight_key = f"edit_weight_{idx}"
         if weight_key not in st.session_state:
@@ -363,19 +360,11 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
 
         prospectus_info = "—"
         transferable_info = "—"
-        if all(row.get(k) != "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]):
-            m = fund_df[
-                (fund_df["Type of Share"] == row["Type of Share"]) &
-                (fund_df["Currency"]      == row["Currency"]) &
-                (fund_df["Hedged"]        == row["Hedged"]) &
-                (fund_df["MiFID FH"]      == row["MiFID FH"]) &
-                (fund_df["Min. Initial"]  == row["Min. Initial"])
-            ]
-            if not m.empty:
-                best = m.loc[m["Ongoing Charge"].idxmin()]
-                prospectus_info  = str(best.get("Prospectus AF", "—"))
-                if has_transferable:
-                    transferable_info = str(best.get("Transferable", "—"))
+        if all(row.get(k) != "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]) and not context.empty:
+            best = context.loc[context["Ongoing Charge"].idxmin()]
+            prospectus_info  = str(best.get("Prospectus AF", "—"))
+            if has_transferable:
+                transferable_info = str(best.get("Transferable", "—"))
         with cols[6]:
             st.markdown(f"**Prospectus AF:** {prospectus_info}")
             st.markdown(f"**Traspasable:** {transferable_info}")
@@ -392,7 +381,7 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
 
     # Botón único: calcular con la edición y guardar como Cartera II
     if st.button("Comparar con Cartera I (guardar edición como Cartera II)", key="save_edit_as_ii_btn"):
-        # ⚠️ Usamos la edición RECIENTE del usuario, no la antigua
+        # Usamos la edición RECIENTE del usuario
         st.session_state.edited_rows = edited_from_import.copy()
 
         results, errors = [], []
@@ -450,5 +439,3 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         st.session_state.edit_import_to_manual = False
         st.toast("Cartera II guardada. Abriendo comparación…", icon="✅")
         st.rerun()
-
-
