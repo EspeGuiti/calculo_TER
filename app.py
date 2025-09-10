@@ -80,13 +80,19 @@ if mode == "Importar Excel con ISINs y pesos existentes":
     )
     if weights_file:
         wdf = pd.read_excel(weights_file)
-        req2 = ["ISIN","Peso %"]
+        req2 = ["ISIN", "Peso %"]
         miss2 = [c for c in req2 if c not in wdf.columns]
         if miss2:
             st.error(f"Faltan columnas en el fichero de cartera: {miss2}")
         else:
             st.success("Cartera existente cargada.")
+    
+            # Agrupar ISINs duplicados sumando los pesos
+            wdf = wdf.groupby("ISIN", as_index=False)["Peso %"].sum()
+    
+            # Merge con el fichero maestro
             merged = pd.merge(wdf, df, on="ISIN", how="left", validate="one_to_many")
+    
             if merged["Family Name"].isnull().any():
                 bad = merged[merged["Family Name"].isnull()]["ISIN"].tolist()
                 st.error(f"No hay datos para ISIN(s): {bad}")
@@ -103,7 +109,6 @@ if mode == "Importar Excel con ISINs y pesos existentes":
                     })
                 st.markdown("**Cartera precargada desde la importación.**")
                 st.session_state.edited_rows = edited.copy()
-
 else:
     st.subheader("Paso 2: Filtros globales de clases de participación")
     opts = {col: sorted(df[col].dropna().unique()) for col in filter_cols}
