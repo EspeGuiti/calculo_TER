@@ -262,7 +262,6 @@ def pretty_table(df_in: pd.DataFrame) -> pd.DataFrame:
     existing = [c for c in desired if c in tbl.columns]
     rest = [c for c in tbl.columns if c not in existing]
     return tbl[existing + rest]
-
 # ─── Paso 5: Mostrar cartera ───
 if st.session_state.current_portfolio:
     cp = st.session_state.current_portfolio
@@ -274,35 +273,28 @@ if st.session_state.current_portfolio:
     else:
         st.subheader("Paso 5: Tabla final")
 
-    st.dataframe(pretty_table(cp["table"]), use_container_width=True)
+    # Copia de la tabla bonita
+    df_show = pretty_table(cp["table"]).copy()
+
+    # Formatear columnas numéricas en estilo europeo
+    for col in ["Ongoing Charge", "Weight %"]:
+        if col in df_show.columns:
+            df_show[col] = df_show[col].apply(
+                lambda x: f"{x:,.4f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                if pd.notnull(x) else x
+            )
+
+    # Mostrar tabla con separador decimal europeo
+    st.dataframe(df_show, use_container_width=True)
+
     if cp["ter"] is not None:
-        st.metric("📊 TER medio ponderado", f"{cp['ter']:.2%}")
+        st.metric("📊 TER medio ponderado", f"{cp['ter']:.2%}".replace(".", ","))
 
     if st.session_state.current_errors:
         st.subheader("⚠️ Incidencias detectadas")
         for fam, msg in st.session_state.current_errors:
             st.error(f"{fam}: {msg}")
 
-    # ⬇️ NUEVO: botón para exportar CSV listo para Excel en español
-    csv = pretty_table(cp["table"]).to_csv(
-        index=False,
-        sep=";",       # separador de columnas → usa ; que Excel España abre por defecto
-        decimal=",",   # separador decimal → coma
-        encoding="utf-8-sig"  # BOM para que Excel lo detecte bien
-    )
-
-    st.download_button(
-        label="📥 Descargar cartera en CSV",
-        data=csv,
-        file_name="cartera_export.csv",
-        mime="text/csv"
-    )
-
-
-    if st.session_state.current_errors:
-        st.subheader("⚠️ Incidencias detectadas")
-        for fam, msg in st.session_state.current_errors:
-            st.error(f"{fam}: {msg}")
 
 # ─── Paso 6: Comparar carteras ───
 if (
