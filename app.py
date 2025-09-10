@@ -277,6 +277,28 @@ if st.session_state.current_portfolio:
     st.dataframe(pretty_table(cp["table"]), use_container_width=True)
     if cp["ter"] is not None:
         st.metric("📊 TER medio ponderado", f"{cp['ter']:.2%}")
+
+    if st.session_state.current_errors:
+        st.subheader("⚠️ Incidencias detectadas")
+        for fam, msg in st.session_state.current_errors:
+            st.error(f"{fam}: {msg}")
+
+    # ⬇️ NUEVO: botón para exportar CSV listo para Excel en español
+    csv = pretty_table(cp["table"]).to_csv(
+        index=False,
+        sep=";",       # separador de columnas → usa ; que Excel España abre por defecto
+        decimal=",",   # separador decimal → coma
+        encoding="utf-8-sig"  # BOM para que Excel lo detecte bien
+    )
+
+    st.download_button(
+        label="📥 Descargar cartera en CSV",
+        data=csv,
+        file_name="cartera_export.csv",
+        mime="text/csv"
+    )
+
+
     if st.session_state.current_errors:
         st.subheader("⚠️ Incidencias detectadas")
         for fam, msg in st.session_state.current_errors:
