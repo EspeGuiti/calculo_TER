@@ -129,9 +129,8 @@ else:
     st.subheader("Paso 3: Personaliza la clase por fondo")
     st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
 
-    for idx, fam in enumerate(df["Family Name"].dropna().unique()):
+        for idx, fam in enumerate(df["Family Name"].dropna().unique()):
         fund_df = df[df["Family Name"] == fam].copy()
-        # Build the row as before, but change Family Name to Name if all selected
         cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
         row = {}
         context = fund_df.copy()
@@ -146,7 +145,7 @@ else:
             new_ctx = ctx if sel == "NO ENCONTRADO" else ctx[ctx[key] == sel]
             return sel, new_ctx
 
-        # Orden en cascada
+        # Cascada de selects
         sel_type, context = cascade(0, "Tipo de participación", "Type of Share", context)
         sel_cur,  context = cascade(1, "Divisa",                 "Currency",     context)
         sel_hed,  context = cascade(2, "Hedged",                 "Hedged",       context)
@@ -158,34 +157,41 @@ else:
         row["MiFID FH"] = sel_mif
         row["Min. Initial"] = sel_min
 
+        # Determine if there is a unique Name for the selected combination
+        valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
+        if valid and not context.empty:
+            best = context.loc[context["Ongoing Charge"].idxmin()]
+            current_name = best.get("Name", fam)
+            row["Name"] = current_name
+            row["_show_name"] = True
+        else:
+            current_name = fam
+            row["Name"] = fam
+            row["_show_name"] = False
+
+        # SHOW THE LABEL: Always display which fund/share class is being configured
+        st.markdown(f"### {current_name}")
+
         row["Weight %"] = cols[5].number_input(
             "Peso %",
             min_value=0.0, max_value=100.0, step=0.1,
             key=f"weight_{idx}"
         )
 
-        # Info visual basada en el contexto final (combinación real)
+        # Info visual
         prospectus_info = "—"
         transferable_info = "—"
-        valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
         if valid and not context.empty:
             best = context.loc[context["Ongoing Charge"].idxmin()]
             prospectus_info  = str(best.get("Prospectus AF", "—"))
             if has_transferable:
                 transferable_info = str(best.get("Transferable", "—"))
-            row["Name"] = best.get("Name", fam)
-            row["_show_name"] = True
-        else:
-            row["Name"] = fam
-            row["_show_name"] = False
 
         with cols[6]:
             st.markdown(f"**Prospectus AF:** {prospectus_info}")
             st.markdown(f"**Traspasable:** {transferable_info}")
 
         edited.append(row)
-
-    st.session_state.edited_rows = edited.copy()
 
 # ─── Total Weight Summary & Equal Weight Button ───
 total_weight = sum(r["Weight %"] for r in edited)
@@ -389,6 +395,21 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         row["MiFID FH"] = sel_mif
         row["Min. Initial"] = sel_min
 
+        # Determine display name
+        valid = all(row.get(k) != "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"])
+        if valid and not context.empty:
+            best = context.loc[context["Ongoing Charge"].idxmin()]
+            current_name = best.get("Name", fam)
+            row["Name"] = current_name
+            row["_show_name"] = True
+        else:
+            current_name = fam
+            row["Name"] = fam
+            row["_show_name"] = False
+
+        # Always display the name above the dropdowns, updating as selections change
+        st.markdown(f"### {current_name}")
+
         weight_key = f"edit_weight_{idx}"
         if weight_key not in st.session_state:
             st.session_state[weight_key] = float(base_row.get("Weight %", 0.0))
@@ -396,16 +417,11 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
 
         prospectus_info = "—"
         transferable_info = "—"
-        if all(row.get(k) != "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]) and not context.empty:
+        if valid and not context.empty:
             best = context.loc[context["Ongoing Charge"].idxmin()]
             prospectus_info  = str(best.get("Prospectus AF", "—"))
             if has_transferable:
                 transferable_info = str(best.get("Transferable", "—"))
-            row["Name"] = best.get("Name", fam)
-            row["_show_name"] = True
-        else:
-            row["Name"] = fam
-            row["_show_name"] = False
 
         with cols[6]:
             st.markdown(f"**Prospectus AF:** {prospectus_info}")
