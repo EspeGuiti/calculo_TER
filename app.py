@@ -45,7 +45,7 @@ df = pd.read_excel(master_file, skiprows=2)
 
 required_cols = [
     "Family Name","Type of Share","Currency","Hedged",
-    "MiFID FH","Min. Initial","Ongoing Charge","ISIN","Prospectus AF"
+    "MiFID FH","Min. Initial","Ongoing Charge","ISIN","Prospectus AF","Name"
 ]
 missing = [c for c in required_cols if c not in df.columns]
 if missing:
@@ -98,8 +98,9 @@ if mode == "Importar Excel con ISINs y pesos existentes":
                 st.error(f"No hay datos para ISIN(s): {bad}")
             else:
                 for _, row in merged.iterrows():
+                    # Use "Name" if all criteria are found, "Family Name" otherwise (but for import, always Name)
                     edited.append({
-                        "Family Name":   row["Family Name"],
+                        "Name":   row["Name"],
                         "Type of Share": row["Type of Share"],
                         "Currency":      row["Currency"],
                         "Hedged":        row["Hedged"],
@@ -130,10 +131,9 @@ else:
 
     for idx, fam in enumerate(df["Family Name"].dropna().unique()):
         fund_df = df[df["Family Name"] == fam].copy()
-        st.markdown(f"---\n#### {fam}")
-
+        # Build the row as before, but change Family Name to Name if all selected
         cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
-        row = {"Family Name": fam}
+        row = {}
         context = fund_df.copy()
 
         def cascade(i, label, key, ctx):
@@ -147,11 +147,16 @@ else:
             return sel, new_ctx
 
         # Orden en cascada
-        row["Type of Share"], context = cascade(0, "Tipo de participación", "Type of Share", context)
-        row["Currency"],     context = cascade(1, "Divisa",                 "Currency",     context)
-        row["Hedged"],       context = cascade(2, "Hedged",                 "Hedged",       context)
-        row["MiFID FH"],     context = cascade(3, "MiFID FH",               "MiFID FH",     context)
-        row["Min. Initial"], context = cascade(4, "Mín. Inversión",         "Min. Initial", context)
+        sel_type, context = cascade(0, "Tipo de participación", "Type of Share", context)
+        sel_cur,  context = cascade(1, "Divisa",                 "Currency",     context)
+        sel_hed,  context = cascade(2, "Hedged",                 "Hedged",       context)
+        sel_mif,  context = cascade(3, "MiFID FH",               "MiFID FH",     context)
+        sel_min,  context = cascade(4, "Mín. Inversión",         "Min. Initial", context)
+        row["Type of Share"] = sel_type
+        row["Currency"] = sel_cur
+        row["Hedged"] = sel_hed
+        row["MiFID FH"] = sel_mif
+        row["Min. Initial"] = sel_min
 
         row["Weight %"] = cols[5].number_input(
             "Peso %",
@@ -168,6 +173,11 @@ else:
             prospectus_info  = str(best.get("Prospectus AF", "—"))
             if has_transferable:
                 transferable_info = str(best.get("Transferable", "—"))
+            row["Name"] = best.get("Name", fam)
+            row["_show_name"] = True
+        else:
+            row["Name"] = fam
+            row["_show_name"] = False
 
         with cols[6]:
             st.markdown(f"**Prospectus AF:** {prospectus_info}")
@@ -207,19 +217,16 @@ if st.button("Calcular TER"):
     for row in edited:
         keys = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
         if any(row.get(k) == "NO ENCONTRADO" for k in keys):
-            errors.append((row["Family Name"], "Selección inválida"))
+            errors.append((row.get("Name", row.get("Family Name", "")), "Selección inválida"))
             continue
 
         match = df[
-            (df["Family Name"] == row["Family Name"]) &
-            (df["Type of Share"] == row["Type of Share"]) &
-            (df["Currency"] == row["Currency"]) &
-            (df["Hedged"] == row["Hedged"]) &
-            (df["MiFID FH"] == row["MiFID FH"]) &
-            (df["Min. Initial"] == row["Min. Initial"])
+            (df["Family Name"] == row["Name"]) | (df["Name"] == row["Name"])
         ]
+        for k in keys:
+            match = match[match[k] == row[k]]
         if match.empty:
-            errors.append((row["Family Name"], "No se encontró clase que coincida"))
+            errors.append((row.get("Name", row.get("Family Name", "")), "No se encontró clase que coincida"))
             continue
 
         best = match.loc[match["Ongoing Charge"].idxmin()]
@@ -236,6 +243,9 @@ if st.button("Calcular TER"):
         }
         if has_transferable:
             result_row["Transferable"] = best.get("Transferable", "—")
+        # Always keep "Name" as main identifier for the table
+        if not result_row.get("Name"):
+            result_row["Name"] = best.get("Name", best.get("Family Name", ""))
         results.append(result_row)
 
     df_res = pd.DataFrame(results)
@@ -253,14 +263,15 @@ def pretty_table(df_in: pd.DataFrame) -> pd.DataFrame:
         pass
     elif "Transferable" in tbl.columns:
         tbl.rename(columns={"Transferable": "Traspasable"}, inplace=True)
+    # Replace "Family Name" by "Name" everywhere
     desired = [
-        "Family Name",
+        "Name",
         "Type of Share", "Currency", "Hedged", "MiFID FH", "Min. Initial",
         "ISIN", "Prospectus AF", "Traspasable",
         "Ongoing Charge", "Weight %"
     ]
     existing = [c for c in desired if c in tbl.columns]
-    rest = [c for c in tbl.columns if c not in existing]
+    rest = [c for c in tbl.columns if c not in existing and not c.startswith("_")]
     return tbl[existing + rest]
 # ─── Paso 5: Mostrar cartera ───
 if st.session_state.current_portfolio:
@@ -345,16 +356,16 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
     st.subheader("Paso 3 (edición): Personaliza la clase por fondo (a partir de la cartera importada)")
     st.write("ℹ️ Los selectores y pesos se han precargado desde el Excel importado. Puedes cambiar la clase y guardar la Cartera II.")
 
-    families = [r["Family Name"] for r in st.session_state.edited_rows]
+    families = [r.get("Name", r.get("Family Name")) for r in st.session_state.edited_rows]
     edited_from_import = []
 
     for idx, fam in enumerate(families):
         base_row = st.session_state.edited_rows[idx]
-        fund_df = df[df["Family Name"] == fam].copy()
+        # Try both Family Name and Name for backward compatibility
+        fund_df = df[(df["Family Name"] == fam) | (df["Name"] == fam)].copy()
 
-        st.markdown(f"---\n#### {fam}")
         cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
-        row = {"Family Name": fam}
+        row = {}
         context = fund_df.copy()
 
         def cascade_prefill(i, label, key, ctx, prefill_value):
@@ -366,11 +377,17 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
             new_ctx = ctx if sel == "NO ENCONTRADO" else ctx[ctx[key] == sel]
             return sel, new_ctx
 
-        row["Type of Share"], context = cascade_prefill(0, "Tipo de participación", "Type of Share", context, base_row.get("Type of Share"))
-        row["Currency"],     context = cascade_prefill(1, "Divisa",                 "Currency",     context, base_row.get("Currency"))
-        row["Hedged"],       context = cascade_prefill(2, "Hedged",                 "Hedged",       context, base_row.get("Hedged"))
-        row["MiFID FH"],     context = cascade_prefill(3, "MiFID FH",               "MiFID FH",     context, base_row.get("MiFID FH"))
-        row["Min. Initial"], context = cascade_prefill(4, "Mín. Inversión",         "Min. Initial", context, base_row.get("Min. Initial"))
+        sel_type, context = cascade_prefill(0, "Tipo de participación", "Type of Share", context, base_row.get("Type of Share"))
+        sel_cur,  context = cascade_prefill(1, "Divisa",                 "Currency",     context, base_row.get("Currency"))
+        sel_hed,  context = cascade_prefill(2, "Hedged",                 "Hedged",       context, base_row.get("Hedged"))
+        sel_mif,  context = cascade_prefill(3, "MiFID FH",               "MiFID FH",     context, base_row.get("MiFID FH"))
+        sel_min,  context = cascade_prefill(4, "Mín. Inversión",         "Min. Initial", context, base_row.get("Min. Initial"))
+
+        row["Type of Share"] = sel_type
+        row["Currency"] = sel_cur
+        row["Hedged"] = sel_hed
+        row["MiFID FH"] = sel_mif
+        row["Min. Initial"] = sel_min
 
         weight_key = f"edit_weight_{idx}"
         if weight_key not in st.session_state:
@@ -384,6 +401,12 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
             prospectus_info  = str(best.get("Prospectus AF", "—"))
             if has_transferable:
                 transferable_info = str(best.get("Transferable", "—"))
+            row["Name"] = best.get("Name", fam)
+            row["_show_name"] = True
+        else:
+            row["Name"] = fam
+            row["_show_name"] = False
+
         with cols[6]:
             st.markdown(f"**Prospectus AF:** {prospectus_info}")
             st.markdown(f"**Traspasable:** {transferable_info}")
@@ -408,19 +431,14 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
 
         for row in edited_from_import:
             if any(row.get(k) == "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]):
-                errors.append((row["Family Name"], "Selección inválida"))
+                errors.append((row.get("Name", row.get("Family Name", "")), "Selección inválida"))
                 continue
 
-            match = df[
-                (df["Family Name"] == row["Family Name"]) &
-                (df["Type of Share"] == row["Type of Share"]) &
-                (df["Currency"] == row["Currency"]) &
-                (df["Hedged"] == row["Hedged"]) &
-                (df["MiFID FH"] == row["MiFID FH"]) &
-                (df["Min. Initial"] == row["Min. Initial"])
-            ]
+            match = df[(df["Family Name"] == row["Name"]) | (df["Name"] == row["Name"])]
+            for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]:
+                match = match[match[k] == row[k]]
             if match.empty:
-                errors.append((row["Family Name"], "No se encontró clase que coincida"))
+                errors.append((row.get("Name", row.get("Family Name", "")), "No se encontró clase que coincida"))
                 continue
 
             best = match.loc[match["Ongoing Charge"].idxmin()]
@@ -438,6 +456,8 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
             }
             if has_transferable:
                 out["Transferable"] = best.get("Transferable","—")
+            if not out.get("Name"):
+                out["Name"] = best.get("Name", best.get("Family Name", ""))
 
             results.append(out)
 
