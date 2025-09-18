@@ -124,74 +124,76 @@ else:
         global_filters["MiFID FH"] = st.selectbox("MiFID FH", opts["MiFID FH"])
     with c5:
         global_filters["Min. Initial"] = st.selectbox("Mín. Inversión", opts["Min. Initial"])
-        
-# ─── Paso 3: Personaliza la clase por fondo (cascada) ───
-st.subheader("Paso 3: Personaliza la clase por fondo")
-st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
+
+    # ─── Paso 3: Personaliza la clase por fondo (cascada) ───
+    st.subheader("Paso 3: Personaliza la clase por fondo")
+    st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
 
     for idx, fam in enumerate(df["Family Name"].dropna().unique()):
-    fund_df = df[df["Family Name"] == fam].copy()
-    cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
-    row = {}
-    context = fund_df.copy()
+        fund_df = df[df["Family Name"] == fam].copy()
+        cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
+        row = {}
+        context = fund_df.copy()
 
-    def cascade(i, label, key, ctx):
-        options = sorted(ctx[key].dropna().unique().tolist())
-        init = global_filters.get(key)
-        init = init if (init in options) else "NO ENCONTRADO"
-        if init == "NO ENCONTRADO":
-            options = ["NO ENCONTRADO"] + options
-        sel = cols[i].selectbox(label, options, index=options.index(init), key=f"{key}_{idx}")
-        new_ctx = ctx if sel == "NO ENCONTRADO" else ctx[ctx[key] == sel]
-        return sel, new_ctx
+        def cascade(i, label, key, ctx):
+            options = sorted(ctx[key].dropna().unique().tolist())
+            init = global_filters.get(key)
+            init = init if (init in options) else "NO ENCONTRADO"
+            if init == "NO ENCONTRADO":
+                options = ["NO ENCONTRADO"] + options
+            sel = cols[i].selectbox(label, options, index=options.index(init), key=f"{key}_{idx}")
+            new_ctx = ctx if sel == "NO ENCONTRADO" else ctx[ctx[key] == sel]
+            return sel, new_ctx
 
-    # Cascada de selects
-    sel_type, context = cascade(0, "Tipo de participación", "Type of Share", context)
-    sel_cur,  context = cascade(1, "Divisa",                 "Currency",     context)
-    sel_hed,  context = cascade(2, "Hedged",                 "Hedged",       context)
-    sel_mif,  context = cascade(3, "MiFID FH",               "MiFID FH",     context)
-    sel_min,  context = cascade(4, "Mín. Inversión",         "Min. Initial", context)
-    row["Type of Share"] = sel_type
-    row["Currency"] = sel_cur
-    row["Hedged"] = sel_hed
-    row["MiFID FH"] = sel_mif
-    row["Min. Initial"] = sel_min
+        # Cascada de selects
+        sel_type, context = cascade(0, "Tipo de participación", "Type of Share", context)
+        sel_cur,  context = cascade(1, "Divisa",                 "Currency",     context)
+        sel_hed,  context = cascade(2, "Hedged",                 "Hedged",       context)
+        sel_mif,  context = cascade(3, "MiFID FH",               "MiFID FH",     context)
+        sel_min,  context = cascade(4, "Mín. Inversión",         "Min. Initial", context)
+        row["Type of Share"] = sel_type
+        row["Currency"] = sel_cur
+        row["Hedged"] = sel_hed
+        row["MiFID FH"] = sel_mif
+        row["Min. Initial"] = sel_min
 
-    # Determine if there is a unique Name for the selected combination
-    valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
-    if valid and not context.empty:
-        best = context.loc[context["Ongoing Charge"].idxmin()]
-        current_name = best.get("Name", fam)
-        row["Name"] = current_name
-        row["_show_name"] = True
-    else:
-        current_name = fam
-        row["Name"] = fam
-        row["_show_name"] = False
+        # Determine if there is a unique Name for the selected combination
+        valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
+        if valid and not context.empty:
+            best = context.loc[context["Ongoing Charge"].idxmin()]
+            current_name = best.get("Name", fam)
+            row["Name"] = current_name
+            row["_show_name"] = True
+        else:
+            current_name = fam
+            row["Name"] = fam
+            row["_show_name"] = False
 
-    # SHOW THE LABEL: Always display which fund/share class is being configured
-    st.markdown(f"### {current_name}")
+        # SHOW THE LABEL: Always display which fund/share class is being configured
+        st.markdown(f"### {current_name}")
 
-    row["Weight %"] = cols[5].number_input(
+        row["Weight %"] = cols[5].number_input(
             "Peso %",
             min_value=0.0, max_value=100.0, step=0.1,
             key=f"weight_{idx}"
         )
 
-    # Info visual
-    prospectus_info = "—"
-    transferable_info = "—"
-    if valid and not context.empty:
-        best = context.loc[context["Ongoing Charge"].idxmin()]
-        prospectus_info  = str(best.get("Prospectus AF", "—"))
-        if has_transferable:
-            transferable_info = str(best.get("Transferable", "—"))
+        # Info visual
+        prospectus_info = "—"
+        transferable_info = "—"
+        if valid and not context.empty:
+            best = context.loc[context["Ongoing Charge"].idxmin()]
+            prospectus_info  = str(best.get("Prospectus AF", "—"))
+            if has_transferable:
+                transferable_info = str(best.get("Transferable", "—"))
 
-    with cols[6]:
-        st.markdown(f"**Prospectus AF:** {prospectus_info}")
-        st.markdown(f"**Traspasable:** {transferable_info}")
+        with cols[6]:
+            st.markdown(f"**Prospectus AF:** {prospectus_info}")
+            st.markdown(f"**Traspasable:** {transferable_info}")
 
-    edited.append(row)
+        edited.append(row)
+
+    st.session_state.edited_rows = edited.copy()
 
 # ─── Total Weight Summary & Equal Weight Button ───
 total_weight = sum(r["Weight %"] for r in edited)
