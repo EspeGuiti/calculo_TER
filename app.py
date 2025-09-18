@@ -135,6 +135,25 @@ else:
         row = {}
         context = fund_df.copy()
 
+        # Compute the current_name BEFORE the cascade
+        temp_context = context.copy()
+        sel_keys = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
+        selected = []
+        for k in sel_keys:
+            v = global_filters.get(k)
+            if v and v in temp_context[k].dropna().unique():
+                temp_context = temp_context[temp_context[k] == v]
+                selected.append(v)
+            else:
+                break
+        valid_pre = len(selected) == len(sel_keys) and not temp_context.empty
+        if valid_pre:
+            best_pre = temp_context.loc[temp_context["Ongoing Charge"].idxmin()]
+            current_name = best_pre.get("Name", fam)
+        else:
+            current_name = fam
+        st.markdown(f"### {current_name}")
+
         def cascade(i, label, key, ctx):
             options = sorted(ctx[key].dropna().unique().tolist())
             init = global_filters.get(key)
@@ -161,16 +180,11 @@ else:
         valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
         if valid and not context.empty:
             best = context.loc[context["Ongoing Charge"].idxmin()]
-            current_name = best.get("Name", fam)
-            row["Name"] = current_name
+            row["Name"] = best.get("Name", fam)
             row["_show_name"] = True
         else:
-            current_name = fam
             row["Name"] = fam
             row["_show_name"] = False
-
-        # SHOW THE LABEL: Always display which fund/share class is being configured
-        st.markdown(f"### {current_name}")
 
         row["Weight %"] = cols[5].number_input(
             "Peso %",
@@ -371,10 +385,27 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         base_row = st.session_state.edited_rows[idx]
         # Try both Family Name and Name for backward compatibility
         fund_df = df[(df["Family Name"] == fam) | (df["Name"] == fam)].copy()
-
         cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
         row = {}
         context = fund_df.copy()
+
+        # Compute the current_name BEFORE the cascade
+        temp_context = fund_df.copy()
+        sel_keys = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
+        valid_pre = True
+        for k in sel_keys:
+            v = base_row.get(k)
+            if v and v in temp_context[k].dropna().unique():
+                temp_context = temp_context[temp_context[k] == v]
+            else:
+                valid_pre = False
+                break
+        if valid_pre and not temp_context.empty:
+            best_pre = temp_context.loc[temp_context["Ongoing Charge"].idxmin()]
+            current_name = best_pre.get("Name", fam)
+        else:
+            current_name = fam
+        st.markdown(f"### {current_name}")
 
         def cascade_prefill(i, label, key, ctx, prefill_value):
             options = sorted(ctx[key].dropna().unique().tolist())
@@ -401,16 +432,11 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         valid = all(row.get(k) != "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"])
         if valid and not context.empty:
             best = context.loc[context["Ongoing Charge"].idxmin()]
-            current_name = best.get("Name", fam)
-            row["Name"] = current_name
+            row["Name"] = best.get("Name", fam)
             row["_show_name"] = True
         else:
-            current_name = fam
             row["Name"] = fam
             row["_show_name"] = False
-
-        # Always display the name above the dropdowns, updating as selections change
-        st.markdown(f"### {current_name}")
 
         weight_key = f"edit_weight_{idx}"
         if weight_key not in st.session_state:
