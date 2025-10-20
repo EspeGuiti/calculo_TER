@@ -128,17 +128,21 @@ else:
     # ─── Paso 3: Personaliza la clase por fondo (cascada) ───
     st.subheader("Paso 3: Personaliza la clase por fondo")
     st.write("ℹ️ *Prospectus AF y Traspasable se calculan automáticamente con la clase seleccionada.*")
-
+    
+    prev_rows = st.session_state.get("edited_rows", [])
+    edited = []
+    
     for idx, fam in enumerate(df["Family Name"].dropna().unique()):
         fund_df = df[df["Family Name"] == fam].copy()
         cols = st.columns([1.5,1.1,1.1,1.2,1.2,1.0,1.5])
         row = {}
         context = fund_df.copy()
-
-        # Compute the current_name BEFORE the cascade
+    
+        # Compute the current_name BEFORE the cascade (try to use previous selections if exist)
         temp_context = context.copy()
         sel_keys = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
         selected = []
+        # Try to use global filters first (same logic que antes)
         for k in sel_keys:
             v = global_filters.get(k)
             if v and v in temp_context[k].dropna().unique():
@@ -151,48 +155,84 @@ else:
             best_pre = temp_context.loc[temp_context["Ongoing Charge"].idxmin()]
             current_name = best_pre.get("Name", fam)
         else:
-            current_name = fam
-        st.markdown(f"### {current_name}")
-
-        def cascade(i, label, key, ctx):
+            # fallback: if we have an edited row, try to compute name from those values
+            prev = prev_rows[idx] if idx < len(prev_rows) else {}
+            temp_context2 = context.copy()
+            ok2 = True
+            for k in sel_keys:
+                v = prev.get(k)
+                if v and v in temp_context2[k].dropna().unique():
+                    temp_context2 = temp_context2[temp_context2[k] == v]
+                else:
+                    ok2 = False
+                    break
+            if ok2 and not temp_context2.empty:
+                best2 = temp_context2.loc[temp_context2["Ongoing Charge"].idxmin()]
+                current_name = best2.get("Name", fam)
+            else:
+                current_name = fam
+    
+        # Show the name in the first column so it appears BEFORE the selects
+        with cols[0]:
+            st.markdown(f"### {current_name}")
+    
+        def cascade(i, label, key, ctx, prefill=None):
             options = sorted(ctx[key].dropna().unique().tolist())
-            init = global_filters.get(key)
-            init = init if (init in options) else "NO ENCONTRADO"
-            if init == "NO ENCONTRADO":
-                options = ["NO ENCONTRADO"] + options
-            sel = cols[i].selectbox(label, options, index=options.index(init), key=f"{key}_{idx}")
-            new_ctx = ctx if sel == "NO ENCONTRADO" else ctx[ctx[key] == sel]
+            # ensure there's at least one option to avoid empty selectboxes
+            if not options:
+                options = ["—"]
+            # try to pick a sensible initial value:
+            init = None
+            if prefill and prefill in options:
+                init = prefill
+            elif global_filters.get(key) and global_filters.get(key) in options:
+                init = global_filters.get(key)
+            else:
+                # keep existing behavior for "NO ENCONTRADO"
+                init = options[0]
+            try:
+                index = options.index(init)
+            except ValueError:
+                index = 0
+            sel = cols[i].selectbox(label, options, index=index, key=f"{key}_{idx}")
+            new_ctx = ctx if sel in ["—", "NO ENCONTRADO"] else ctx[ctx[key] == sel]
             return sel, new_ctx
-
-        # Cascada de selects
-        sel_type, context = cascade(0, "Tipo de participación", "Type of Share", context)
-        sel_cur,  context = cascade(1, "Divisa",                 "Currency",     context)
-        sel_hed,  context = cascade(2, "Hedged",                 "Hedged",       context)
-        sel_mif,  context = cascade(3, "MiFID FH",               "MiFID FH",     context)
-        sel_min,  context = cascade(4, "Mín. Inversión",         "Min. Initial", context)
+    
+        # get prefill from previous edited_rows if present
+        prev = prev_rows[idx] if idx < len(prev_rows) else {}
+        sel_type, context = cascade(0, "Tipo de participación", "Type of Share", context, prev.get("Type of Share"))
+        sel_cur,  context = cascade(1, "Divisa",                 "Currency",     context, prev.get("Currency"))
+        sel_hed,  context = cascade(2, "Hedged",                 "Hedged",       context, prev.get("Hedged"))
+        sel_mif,  context = cascade(3, "MiFID FH",               "MiFID FH",     context, prev.get("MiFID FH"))
+        sel_min,  context = cascade(4, "Mín. Inversión",         "Min. Initial", context, prev.get("Min. Initial"))
+    
         row["Type of Share"] = sel_type
         row["Currency"] = sel_cur
         row["Hedged"] = sel_hed
         row["MiFID FH"] = sel_mif
         row["Min. Initial"] = sel_min
-
-        # Determine if there is a unique Name for the selected combination
-        valid = all(row.get(k) != "NO ENCONTRADO" for k in filter_cols)
-        if valid and not context.empty:
+    
+        valid = all(row.get(k) not in (None, "NO ENCONTRADO", "—") for k in sel_keys) and not context.empty
+        if valid:
             best = context.loc[context["Ongoing Charge"].idxmin()]
             row["Name"] = best.get("Name", fam)
             row["_show_name"] = True
         else:
             row["Name"] = fam
             row["_show_name"] = False
-
+    
+        # preserve weight in session_state so it remains when we re-render
+        weight_key = f"weight_{idx}"
+        if weight_key not in st.session_state:
+            # try to restore from prev_rows
+            st.session_state[weight_key] = float(prev.get("Weight %", 0.0))
         row["Weight %"] = cols[5].number_input(
             "Peso %",
             min_value=0.0, max_value=100.0, step=0.1,
-            key=f"weight_{idx}"
+            key=weight_key
         )
-
-        # Info visual
+    
+        # Info visual (misma lógica)
         prospectus_info = "—"
         transferable_info = "—"
         if valid and not context.empty:
@@ -200,13 +240,13 @@ else:
             prospectus_info  = str(best.get("Prospectus AF", "—"))
             if has_transferable:
                 transferable_info = str(best.get("Transferable", "—"))
-
+    
         with cols[6]:
             st.markdown(f"**Prospectus AF:** {prospectus_info}")
             st.markdown(f"**Traspasable:** {transferable_info}")
-
+    
         edited.append(row)
-
+    
     st.session_state.edited_rows = edited.copy()
 
 # ─── Total Weight Summary & Equal Weight Button ───
@@ -389,7 +429,7 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         row = {}
         context = fund_df.copy()
 
-        # Compute the current_name BEFORE the cascade
+        # Compute the current_name BEFORE the cascade (use base_row prefill)
         temp_context = fund_df.copy()
         sel_keys = ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"]
         valid_pre = True
@@ -405,15 +445,22 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
             current_name = best_pre.get("Name", fam)
         else:
             current_name = fam
-        st.markdown(f"### {current_name}")
+
+        # Show the name in first column
+        with cols[0]:
+            st.markdown(f"### {current_name}")
 
         def cascade_prefill(i, label, key, ctx, prefill_value):
             options = sorted(ctx[key].dropna().unique().tolist())
-            init = prefill_value if (prefill_value in options) else "NO ENCONTRADO"
-            if init == "NO ENCONTRADO":
-                options = ["NO ENCONTRADO"] + options
-            sel = cols[i].selectbox(label, options, index=options.index(init), key=f"edit_{key}_{idx}")
-            new_ctx = ctx if sel == "NO ENCONTRADO" else ctx[ctx[key] == sel]
+            if not options:
+                options = ["—"]
+            init = prefill_value if (prefill_value in options) else options[0]
+            try:
+                index = options.index(init)
+            except ValueError:
+                index = 0
+            sel = cols[i].selectbox(label, options, index=index, key=f"edit_{key}_{idx}")
+            new_ctx = ctx if sel in ["—", "NO ENCONTRADO"] else ctx[ctx[key] == sel]
             return sel, new_ctx
 
         sel_type, context = cascade_prefill(0, "Tipo de participación", "Type of Share", context, base_row.get("Type of Share"))
@@ -428,8 +475,7 @@ if st.session_state.edit_import_to_manual and st.session_state.edited_rows:
         row["MiFID FH"] = sel_mif
         row["Min. Initial"] = sel_min
 
-        # Determine display name
-        valid = all(row.get(k) != "NO ENCONTRADO" for k in ["Type of Share","Currency","Hedged","MiFID FH","Min. Initial"])
+        valid = all(row.get(k) not in (None, "NO ENCONTRADO", "—") for k in sel_keys) and not context.empty
         if valid and not context.empty:
             best = context.loc[context["Ongoing Charge"].idxmin()]
             row["Name"] = best.get("Name", fam)
